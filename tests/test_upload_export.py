@@ -142,19 +142,41 @@ def test_deleting_a_batch_frees_the_name_for_a_new_upload(client):
     assert (module.settings.input_dir / "Lote" / "b.pdf").is_file()
 
 
-def test_a_folder_copied_by_hand_is_not_deletable(client):
+def test_a_folder_already_in_the_tray_is_adopted_as_a_batch(client):
     test_client, module = client
-    manual = module.settings.input_dir / "Copiada a mano"
+    manual = module.settings.input_dir / "Ya estaba"
     manual.mkdir(parents=True)
     (manual / "original.pdf").write_bytes(MINIMAL_PDF)
     test_client.post("/api/sync")
 
-    response = test_client.post("/api/batches/Copiada a mano/delete")
-    assert response.status_code == 404
-    assert (manual / "original.pdf").is_file()
+    listed = {b["name"]: b for b in test_client.get("/api/batches").json()["batches"]}
+    assert listed["Ya estaba"]["deletable"] is True
+    assert listed["Ya estaba"]["source"] == "adopted"
+
+
+def test_loose_pdfs_at_the_root_never_form_a_deletable_batch(client):
+    test_client, module = client
+    (module.settings.input_dir / "suelto.pdf").write_bytes(MINIMAL_PDF)
+    test_client.post("/api/sync")
 
     listed = {b["name"]: b for b in test_client.get("/api/batches").json()["batches"]}
-    assert listed["Copiada a mano"]["deletable"] is False
+    assert listed[""]["deletable"] is False
+    # La bandeja completa jamas se borra, ni con el nombre vacio.
+    assert test_client.post("/api/batches//delete").status_code in (404, 400, 405, 307)
+    assert (module.settings.input_dir / "suelto.pdf").is_file()
+
+
+def test_uploading_into_an_adopted_batch_promotes_it(client):
+    test_client, module = client
+    manual = module.settings.input_dir / "Mixto"
+    manual.mkdir(parents=True)
+    (manual / "original.pdf").write_bytes(MINIMAL_PDF)
+    test_client.post("/api/sync")
+    assert test_client.get("/api/batches").json()["batches"][0]["source"] == "adopted"
+
+    upload(test_client, ["nuevo.pdf"], batch="Mixto")
+    listed = {b["name"]: b for b in test_client.get("/api/batches").json()["batches"]}
+    assert listed["Mixto"]["source"] == "upload"
 
 
 @pytest.mark.parametrize("target", ["..", "../..", "  ", "Lote/../..", "raiz"])

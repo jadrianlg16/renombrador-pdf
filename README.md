@@ -122,12 +122,15 @@ no basta, el servidor verifica la firma del archivo y descarta el resto.
 **Limpiar lote** borra del disco la carpeta del lote que esté elegido arriba. Es definitivo:
 no hay papelera ni deshacer. Por eso está acotado así:
 
-- Sólo borra **lotes que se subieron desde la aplicación**. Una carpeta que copiaste a mano
-  dentro de `data/inbox` no se registra como lote y el botón aparece apagado explicando por qué.
-- No puede borrar la raíz de `data/inbox` ni «Todos los lotes» de un golpe.
+- Sólo borra **carpetas**, nunca archivos sueltos en la raíz de `data/inbox` ni la bandeja
+  entera, y tampoco «Todos los lotes» de un golpe.
 - Pide confirmación mostrando cuántos archivos se van y cuántos ya tenían nombre nuevo.
 - Si todavía no descargaste el ZIP de ese lote y hay nombres ya corregidos, la confirmación
   lo advierte en rojo.
+- Una carpeta que ya estaba en la bandeja (no subida desde el navegador) se adopta como lote
+  para que también se pueda limpiar, pero la confirmación avisa que no la subiste en esta
+  sesión y te pide confirmar que no son tus originales. **Si usas `docker compose` con tu
+  carpeta real montada, lee ese aviso con cuidado: ahí sí serían tus originales.**
 
 Después de limpiarlo, el nombre queda libre: subir otra vez «Escrituras Junio» vuelve a crear
 `Escrituras Junio`, no `Escrituras Junio (2)`.

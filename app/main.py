@@ -354,9 +354,9 @@ def list_batches() -> dict:
             {
                 "name": name,
                 **bucket,
-                # Sólo se puede borrar lo que entró por la subida: una carpeta copiada
-                # a mano en data/inbox nunca queda registrada y por eso no es borrable.
+                # Los PDF sueltos en la raíz de la bandeja no forman lote y nunca se borran.
                 "deletable": bool(name) and bool(row),
+                "source": row["source"] if row else None,
                 "created_at": row["created_at"] if row else None,
                 "exported_at": row["exported_at"] if row else None,
             }
@@ -370,10 +370,7 @@ def delete_batch(batch_name: str) -> dict:
     if not row:
         raise HTTPException(
             status_code=404,
-            detail=(
-                "Ese lote no se subió desde la aplicación, así que no se puede borrar desde "
-                "aquí. Bórralo a mano si estás seguro."
-            ),
+            detail="Ese lote no existe en la bandeja, así que no hay nada que borrar.",
         )
     name = row["name"]
     inbox = settings.input_dir.resolve()

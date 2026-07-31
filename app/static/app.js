@@ -491,7 +491,7 @@ function updateClearBatchControls() {
   elements.clearBatchButton.textContent = `Limpiar “${batch.name}” (${batch.documents})`;
   elements.clearBatchButton.title = batch.deletable
     ? `Borra del disco los ${batch.documents} archivos de “${batch.name}”.`
-    : 'Este lote no se subió desde la aplicación, así que no se borra desde aquí.';
+    : 'Los PDF sueltos en la raíz de la bandeja no forman lote y no se borran desde aquí.';
 }
 
 function openClearModal() {
@@ -500,14 +500,21 @@ function openClearModal() {
   const sinDescargar = batch.approved > 0 && !batch.exported_at;
   const unico = batch.approved === 1;
   const renombrados = unico ? '1 ya tiene su nombre nuevo' : `${batch.approved} ya tienen su nombre nuevo`;
+  const cuantos = batch.documents === 1 ? 'Se borrará 1 archivo' : `Se borrarán ${batch.documents} archivos`;
   elements.clearModalTarget.textContent =
-    `Se borrarán ${batch.documents} ${batch.documents === 1 ? 'archivo' : 'archivos'} del lote “${batch.name}”`
-    + `${batch.approved ? `, de los cuales ${renombrados}` : ''}.`;
-  elements.clearModalWarning.hidden = !sinDescargar;
-  elements.clearModalWarning.textContent = sinDescargar
-    ? 'Todavía no has descargado el ZIP de este lote. Si lo borras, pierdes '
-      + (unico ? 'el nombre que ya corregiste.' : `los ${batch.approved} nombres que ya corregiste.`)
-    : '';
+    `${cuantos} del lote “${batch.name}”${batch.approved ? `, de los cuales ${renombrados}` : ''}.`;
+  const avisos = [];
+  if (sinDescargar) {
+    avisos.push(
+      'Todavía no has descargado el ZIP de este lote. Si lo borras, pierdes '
+      + (unico ? 'el nombre que ya corregiste.' : `los ${batch.approved} nombres que ya corregiste.`),
+    );
+  }
+  if (batch.source === 'adopted') {
+    avisos.push('Este lote ya estaba en la bandeja, no lo subiste en esta sesión. Confirma que no son tus originales.');
+  }
+  elements.clearModalWarning.hidden = avisos.length === 0;
+  elements.clearModalWarning.textContent = avisos.join(' ');
   elements.clearModal.hidden = false;
   state.modalOpen = true;
   elements.clearCancel.focus();

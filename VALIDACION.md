@@ -68,14 +68,17 @@ Verificado con eventos de teclado sobre la aplicación en ejecución:
 
 ### Limpiar lote (acción destructiva)
 
-El borrado está acotado por una lista blanca: la tabla `batches` sólo registra lo que entró
-por `/api/upload`, y `POST /api/batches/{nombre}/delete` exige que el nombre exista ahí.
+El borrado sólo alcanza carpetas registradas en la tabla `batches`: las que crea `/api/upload`
+(`source: upload`) y las que ya estaban en la bandeja, adoptadas durante el escaneo
+(`source: adopted`). `POST /api/batches/{nombre}/delete` exige que el nombre exista ahí.
 
 Comprobado con pruebas automáticas:
 
 - Borra la carpeta y los documentos del lote indicado y **no toca los demás lotes**.
-- Una carpeta copiada a mano en `data/inbox` responde `404` y sus archivos siguen ahí; el
-  endpoint `/api/batches` la marca `deletable: false`.
+- Los PDF sueltos en la raíz forman el lote vacío `""`, que queda `deletable: false`; intentar
+  borrarlo no toca la bandeja.
+- Una carpeta que ya estaba en la bandeja se adopta con `source: adopted`; si después recibe
+  una subida pasa a `source: upload`.
 - Nombres como `..`, `../..`, `Lote/../..` y espacios se rechazan; un archivo colocado fuera
   de la bandeja sigue intacto después del intento y la propia bandeja no se borra.
 - Tras borrar, el nombre queda libre: volver a subir «Lote» crea `Lote`, no `Lote (2)`.
@@ -84,8 +87,8 @@ Comprobado con pruebas automáticas:
 Comprobado en el navegador:
 
 - Con «Todos» elegido el botón queda apagado con el motivo «no se borran todos a la vez».
-- Con la carpeta copiada a mano queda apagado explicando que no se subió desde la aplicación.
-- Con un lote subido, el botón muestra su nombre y cuántos archivos se van.
+- Con un lote, el botón muestra su nombre y cuántos archivos se van.
+- Un lote adoptado agrega al diálogo el aviso de que no se subió en esta sesión.
 - Antes de descargar el ZIP, la confirmación muestra el aviso rojo; después de descargarlo,
   el aviso desaparece.
 - `Escape` y el clic fuera cierran el diálogo sin borrar nada; con el diálogo abierto los
@@ -95,7 +98,11 @@ Comprobado en el navegador:
 
 ### Estado final
 
-- 40 pruebas automáticas aprobadas (`pytest`).
+- 42 pruebas automáticas aprobadas (`pytest`).
+- Migración `ALTER TABLE batches ADD COLUMN source` probada contra la base real en Docker
+  (75 documentos, 40 ya renombrados): los dos lotes existentes quedaron adoptados y borrables,
+  los documentos siguieron intactos y el arranque no registró errores. Se respaldó el volumen
+  completo antes de migrar.
 - Sin errores en la consola del navegador ni en el registro del servidor durante todo el flujo.
 - No se pudo tomar una captura de pantalla: el panel del navegador no estaba visible y por eso
   la página no compone imagen. La interfaz se verificó por árbol de accesibilidad, geometría

@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS batches (
     name TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    exported_at TEXT
+    exported_at TEXT,
+    source TEXT NOT NULL DEFAULT 'upload'
 );
 
 CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
@@ -80,6 +81,12 @@ class Database:
     def _initialize(self) -> None:
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            # CREATE TABLE IF NOT EXISTS no agrega columnas a una base que ya existía.
+            columns = {row["name"] for row in connection.execute("PRAGMA table_info(batches)")}
+            if "source" not in columns:
+                connection.execute(
+                    "ALTER TABLE batches ADD COLUMN source TEXT NOT NULL DEFAULT 'upload'"
+                )
 
     def sync_documents(self) -> dict[str, int]:
         added = 0
@@ -91,12 +98,19 @@ class Database:
             ).fetchall()
             known = {row["current_relative_path"]: row for row in known_rows}
             disk_paths: set[str] = set()
+            adopted: set[str] = set()
 
             for path in sorted(self.settings.input_dir.rglob("*.pdf"), key=lambda p: str(p).lower()):
                 if not path.is_file():
                     continue
                 relative = path.relative_to(self.settings.input_dir).as_posix()
                 disk_paths.add(relative)
+                # Cualquier carpeta de primer nivel que aparezca en la bandeja se adopta como
+                # lote, para que los que existían antes de esta tabla también sean borrables.
+                # Los PDF sueltos en la raíz no forman lote y por eso nunca son borrables.
+                head, separator, _ = relative.partition("/")
+                if separator:
+                    adopted.add(head)
                 row = known.get(relative)
                 if row:
                     if row["status"] == "missing":
@@ -125,6 +139,17 @@ class Database:
                         (utc_now(), row["id"]),
                     )
                     missing += 1
+
+            if adopted:
+                now = utc_now()
+                connection.executemany(
+                    """
+                    INSERT INTO batches (name, created_at, updated_at, source)
+                    VALUES (?, ?, ?, 'adopted')
+                    ON CONFLICT(name) DO NOTHING
+                    """,
+                    [(name, now, now) for name in sorted(adopted)],
+                )
 
         return {"added": added, "restored": restored, "missing": missing}
 
@@ -276,15 +301,18 @@ class Database:
                 (document_id, None, restored_path, json.dumps({"action_id": action_id}), now),
             )
 
-    def register_batch(self, name: str) -> None:
+    def register_batch(self, name: str, source: str = "upload") -> None:
         now = utc_now()
         with self._lock, self.connect() as connection:
             connection.execute(
                 """
-                INSERT INTO batches (name, created_at, updated_at) VALUES (?, ?, ?)
-                ON CONFLICT(name) DO UPDATE SET updated_at=excluded.updated_at
+                INSERT INTO batches (name, created_at, updated_at, source) VALUES (?, ?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    updated_at=excluded.updated_at,
+                    -- Un lote adoptado que luego recibe una subida pasa a contar como subido.
+                    source=CASE WHEN excluded.source='upload' THEN 'upload' ELSE batches.source END
                 """,
-                (name, now, now),
+                (name, now, now, source),
             )
 
     def get_batch(self, name: str) -> dict[str, Any] | None:
