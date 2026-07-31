@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Renombrador PDF</title>
+  <link rel="stylesheet" href="/static/styles.css?v=1.2.0" />
+</head>
+<body>
+  <div id="toast" class="toast" aria-live="polite"></div>
+  <div id="drop-overlay" class="drop-overlay" hidden>
+    <div>
+      <strong>Suelta aquí tu carpeta de PDF</strong>
+      <span>Se copiarán a la bandeja local; nada sale de tu equipo.</span>
+    </div>
+  </div>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">R</div>
+      <div>
+        <h1>Renombrador PDF</h1>
+        <p>Selección visual, OCR local y aprobación humana</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <div class="progress-summary" id="progress-summary">Cargando documentos…</div>
+      <button class="button secondary" id="sync-button" type="button">Actualizar carpeta</button>
+      <button class="button secondary" id="undo-button" type="button">Deshacer último</button>
+    </div>
+  </header>
+
+  <section class="batch-bar">
+    <div class="batch-group">
+      <span class="eyebrow">Entrada</span>
+      <button class="button primary" id="upload-folder-button" type="button">Subir carpeta</button>
+      <button class="button ghost" id="upload-files-button" type="button">Subir PDF sueltos</button>
+      <input id="folder-input" type="file" webkitdirectory directory multiple hidden />
+      <input id="files-input" type="file" accept="application/pdf,.pdf" multiple hidden />
+      <span class="batch-hint" id="upload-hint">O arrastra la carpeta a cualquier parte de la ventana.</span>
+    </div>
+    <div class="batch-group">
+      <span class="eyebrow">Salida</span>
+      <label class="inline-field" for="export-folder">Lote
+        <select id="export-folder"></select>
+      </label>
+      <label class="inline-field" for="export-scope">Incluir
+        <select id="export-scope">
+          <option value="approved">Sólo aprobados</option>
+          <option value="all">Todos los archivos</option>
+        </select>
+      </label>
+      <button class="button success" id="export-button" type="button" disabled>Descargar ZIP</button>
+    </div>
+  </section>
+
+  <div class="upload-progress" id="upload-progress" hidden>
+    <div class="upload-progress-track"><span id="upload-progress-fill"></span></div>
+    <span class="upload-progress-label" id="upload-progress-label">Subiendo…</span>
+  </div>
+
+  <main class="workspace">
+    <section class="viewer-panel panel">
+      <div class="viewer-toolbar">
+        <div class="file-heading">
+          <span class="eyebrow" id="position-label">Documento</span>
+          <h2 id="file-name">Sin documentos</h2>
+        </div>
+        <div class="toolbar-group">
+          <button class="icon-button" id="previous-document" title="Documento anterior" type="button">←</button>
+          <button class="icon-button" id="next-document" title="Documento siguiente" type="button">→</button>
+          <a class="button ghost" id="open-pdf" target="_blank" rel="noopener">Abrir PDF</a>
+        </div>
+      </div>
+
+      <div class="page-toolbar">
+        <div class="toolbar-group">
+          <button class="icon-button" id="previous-page" title="Página anterior" type="button">‹</button>
+          <span class="page-indicator" id="page-indicator">Página 0 de 0</span>
+          <button class="icon-button" id="next-page" title="Página siguiente" type="button">›</button>
+        </div>
+        <div class="toolbar-group zoom-control">
+          <span>Zoom</span>
+          <input id="zoom-range" type="range" min="60" max="180" step="10" value="100" />
+          <output id="zoom-output">100%</output>
+        </div>
+        <div class="toolbar-group">
+          <button class="button ghost" id="remove-selection" type="button">Quitar última caja</button>
+          <button class="button ghost" id="clear-selections" type="button">Limpiar cajas</button>
+        </div>
+      </div>
+
+      <div class="viewer-help">
+        Arrastra sobre el nombre. Puedes crear varias cajas; se unirán en el orden 1, 2, 3… Una sola caja puede incluir dos o más líneas.
+      </div>
+
+      <div class="document-scroll" id="document-scroll">
+        <div class="empty-state" id="empty-state">
+          <div class="empty-icon">PDF</div>
+          <h3>No hay PDF pendientes</h3>
+          <p>Presiona <strong>Subir carpeta</strong>, arrastra los archivos aquí, o cópialos a <code>data/inbox</code> y usa “Actualizar carpeta”.</p>
+        </div>
+        <div class="page-stage" id="page-stage" hidden>
+          <img id="page-image" alt="Página del documento" draggable="false" />
+          <canvas id="selection-canvas"></canvas>
+          <div class="loading-overlay" id="page-loading">Renderizando página…</div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="review-panel panel">
+      <div class="review-header">
+        <div>
+          <span class="eyebrow">Revisión obligatoria</span>
+          <h2>Nombre del archivo</h2>
+        </div>
+        <span class="status-badge pending" id="status-badge">Pendiente</span>
+      </div>
+
+      <div class="selection-summary">
+        <div>
+          <strong id="selection-count">0 selecciones</strong>
+          <span id="selection-pages">Ninguna página seleccionada</span>
+        </div>
+        <button class="button primary" id="ocr-button" type="button" disabled>Leer selecciones con OCR</button>
+      </div>
+
+      <div class="confidence-card" id="confidence-card" hidden>
+        <div>
+          <span>Confianza orientativa</span>
+          <strong id="confidence-value">0%</strong>
+        </div>
+        <p id="confidence-message">La confianza no sustituye tu revisión visual.</p>
+      </div>
+
+      <label class="field-label" for="name-input">Nombre aprobado</label>
+      <textarea id="name-input" rows="3" placeholder="Escribe o corrige el nombre exacto"></textarea>
+      <div class="filename-preview">Archivo: <strong id="filename-preview">—.pdf</strong></div>
+
+      <div class="candidate-section" id="candidate-section" hidden>
+        <div class="section-heading">
+          <h3>Lecturas propuestas</h3>
+          <span>Haz clic para usar una</span>
+        </div>
+        <div id="candidate-list" class="candidate-list"></div>
+      </div>
+
+      <div class="crop-section" id="crop-section" hidden>
+        <div class="section-heading">
+          <h3>Recortes seleccionados</h3>
+          <span>Compara letra por letra</span>
+        </div>
+        <div id="crop-list" class="crop-list"></div>
+      </div>
+
+      <div class="review-actions">
+        <button class="button success large" id="approve-button" type="button" disabled>Aprobar y siguiente</button>
+        <button class="button secondary" id="skip-button" type="button" disabled>Omitir por ahora</button>
+      </div>
+
+      <div class="shortcut-card">
+        <h3>Atajos</h3>
+        <div><kbd>Enter</kbd><span>Aprobar y saltar al siguiente pendiente</span></div>
+        <div><kbd>←</kbd> <kbd>→</kbd><span>Documento anterior / siguiente</span></div>
+        <div><kbd>↑</kbd> <kbd>↓</kbd><span>Página anterior / siguiente</span></div>
+        <div><kbd>R</kbd><span>Limpiar selecciones</span></div>
+        <div><kbd>S</kbd><span>Omitir documento</span></div>
+        <div><kbd>Ctrl</kbd> + <kbd>Z</kbd><span>Deshacer el último renombrado</span></div>
+        <div><kbd>Alt</kbd> + tecla<span>Los atajos anteriores también funcionan mientras escribes el nombre</span></div>
+      </div>
+
+      <details class="queue-details">
+        <summary>Ver cola de documentos</summary>
+        <div id="document-queue" class="document-queue"></div>
+      </details>
+    </aside>
+  </main>
+
+  <script src="/static/app.js?v=1.2.0" defer></script>
+</body>
+</html>

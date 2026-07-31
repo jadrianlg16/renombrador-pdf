@@ -1,0 +1,13 @@
+services:
+  renombrador-pdf:
+    build: .
+    ports:
+      - "8765:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      PDF_INPUT_DIR: /app/data/inbox
+      PDF_STATE_DIR: /app/data/state
+      PDF_OCR_DPI: "450"
+      OCR_LANGUAGES: spa+eng
+    restart: unless-stopped
