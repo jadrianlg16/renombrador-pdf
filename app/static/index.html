@@ -50,8 +50,22 @@
         </select>
       </label>
       <button class="button success" id="export-button" type="button" disabled>Descargar ZIP</button>
+      <button class="button ghost danger-text" id="clear-batch-button" type="button" disabled>Limpiar lote</button>
     </div>
   </section>
+
+  <div class="modal-backdrop" id="clear-modal" hidden>
+    <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="clear-modal-title">
+      <h2 id="clear-modal-title">Limpiar lote</h2>
+      <p id="clear-modal-target">—</p>
+      <div class="modal-warning" id="clear-modal-warning" hidden></div>
+      <p class="modal-note">Los archivos se borran del disco. Esta acción no se puede deshacer.</p>
+      <div class="modal-actions">
+        <button class="button secondary" id="clear-cancel" type="button">Cancelar</button>
+        <button class="button danger" id="clear-confirm" type="button">Sí, borrar el lote</button>
+      </div>
+    </div>
+  </div>
 
   <div class="upload-progress" id="upload-progress" hidden>
     <div class="upload-progress-track"><span id="upload-progress-fill"></span></div>

@@ -110,10 +110,27 @@ También puedes ejecutar `./run_linux.sh`; el lanzador escogerá automáticament
    pendiente del lote.
 4. Cuando termines, elige el **Lote** y si quieres **Sólo aprobados** o **Todos los archivos**,
    y presiona **Descargar ZIP**.
+5. Con el ZIP ya guardado, presiona **Limpiar lote** para dejar la bandeja lista para la
+   siguiente carpeta.
 
 El ZIP de un lote trae los archivos ya renombrados en la raíz. El ZIP de *Todos* conserva la
 carpeta de cada lote para no mezclarlos. Sólo se aceptan archivos `.pdf` reales: la extensión
 no basta, el servidor verifica la firma del archivo y descarta el resto.
+
+### Limpiar un lote
+
+**Limpiar lote** borra del disco la carpeta del lote que esté elegido arriba. Es definitivo:
+no hay papelera ni deshacer. Por eso está acotado así:
+
+- Sólo borra **lotes que se subieron desde la aplicación**. Una carpeta que copiaste a mano
+  dentro de `data/inbox` no se registra como lote y el botón aparece apagado explicando por qué.
+- No puede borrar la raíz de `data/inbox` ni «Todos los lotes» de un golpe.
+- Pide confirmación mostrando cuántos archivos se van y cuántos ya tenían nombre nuevo.
+- Si todavía no descargaste el ZIP de ese lote y hay nombres ya corregidos, la confirmación
+  lo advierte en rojo.
+
+Después de limpiarlo, el nombre queda libre: subir otra vez «Escrituras Junio» vuelve a crear
+`Escrituras Junio`, no `Escrituras Junio (2)`.
 
 ## Flujo recomendado para los 400 PDF
 

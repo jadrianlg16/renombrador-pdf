@@ -64,6 +64,23 @@ code, kbd { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .upload-progress-track span { display: block; height: 100%; width: 0; border-radius: 999px; background: var(--primary); transition: width .15s linear; }
 .upload-progress-label { color: var(--muted); font-size: 11px; min-width: 200px; text-align: right; }
 
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 120; display: grid; place-items: center;
+  background: rgba(6, 8, 11, .74); padding: 20px;
+}
+.modal {
+  width: min(460px, 100%); background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px; box-shadow: 0 24px 70px rgba(0,0,0,.55);
+}
+.modal h2 { margin: 0 0 10px; font-size: 17px; }
+.modal p { margin: 0 0 10px; font-size: 13px; color: #c6d0da; overflow-wrap: anywhere; }
+.modal-note { color: var(--muted) !important; font-size: 11px !important; }
+.modal-warning {
+  margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; font-size: 12px;
+  background: rgba(239,106,106,.10); border: 1px solid rgba(239,106,106,.40); color: #ffc4c4;
+}
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
 .drop-overlay {
   position: fixed; inset: 0; z-index: 90; display: grid; place-items: center;
   background: rgba(11, 13, 16, .82); backdrop-filter: blur(2px); pointer-events: none;
@@ -110,6 +127,10 @@ code, kbd { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .button.success { background: var(--success); color: #061a12; }
 .button.secondary { background: var(--panel-2); border-color: var(--border); }
 .button.ghost { background: transparent; border-color: var(--border); }
+.button.danger { background: var(--danger); color: #2a0808; }
+/* Va despues de .ghost: comparten especificidad y gana la ultima. */
+.button.ghost.danger-text { color: var(--danger); border-color: rgba(239, 106, 106, .45); }
+.button.ghost.danger-text:disabled { color: var(--muted); border-color: var(--border); }
 .button:hover:not(:disabled), .icon-button:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.12); }
 .button:disabled, .icon-button:disabled { opacity: .42; cursor: not-allowed; }
 

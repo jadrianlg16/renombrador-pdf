@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import tempfile
 import zipfile
 from datetime import datetime
@@ -316,14 +317,91 @@ async def upload_documents(
         else:
             rejected.append({"name": upload.filename or "(sin nombre)", "reason": reason or "Rechazado"})
 
+    batch_name = batch_dir.relative_to(settings.input_dir).as_posix()
+    if saved:
+        database.register_batch(batch_name)
     sync_result = database.sync_documents()
     return {
         "ok": True,
-        "batch": batch_dir.relative_to(settings.input_dir).as_posix(),
+        "batch": batch_name,
         "saved": len(saved),
         "files": saved,
         "rejected": rejected,
         "sync": sync_result,
+    }
+
+
+@app.get("/api/batches")
+def list_batches() -> dict:
+    registered = {row["name"]: row for row in database.list_batches()}
+    totals: dict[str, dict[str, int]] = {}
+    for document in database.list_documents():
+        if document["status"] == "missing":
+            continue
+        name = batch_of(document["current_relative_path"])
+        bucket = totals.setdefault(name, {"documents": 0, "approved": 0, "pending": 0})
+        bucket["documents"] += 1
+        if document["status"] == "approved":
+            bucket["approved"] += 1
+        elif document["status"] == "pending":
+            bucket["pending"] += 1
+
+    batches = []
+    for name in sorted(set(totals) | set(registered)):
+        row = registered.get(name)
+        bucket = totals.get(name, {"documents": 0, "approved": 0, "pending": 0})
+        batches.append(
+            {
+                "name": name,
+                **bucket,
+                # Sólo se puede borrar lo que entró por la subida: una carpeta copiada
+                # a mano en data/inbox nunca queda registrada y por eso no es borrable.
+                "deletable": bool(name) and bool(row),
+                "created_at": row["created_at"] if row else None,
+                "exported_at": row["exported_at"] if row else None,
+            }
+        )
+    return {"batches": batches, "latest_upload": database.latest_batch()}
+
+
+@app.post("/api/batches/{batch_name}/delete")
+def delete_batch(batch_name: str) -> dict:
+    row = database.get_batch(batch_name)
+    if not row:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Ese lote no se subió desde la aplicación, así que no se puede borrar desde "
+                "aquí. Bórralo a mano si estás seguro."
+            ),
+        )
+    name = row["name"]
+    inbox = settings.input_dir.resolve()
+    directory = (settings.input_dir / name).resolve()
+    if directory == inbox:
+        raise HTTPException(status_code=400, detail="No se puede borrar la carpeta raíz")
+    try:
+        directory.relative_to(inbox)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Ruta de lote inválida") from exc
+
+    removed_files = 0
+    if directory.is_dir():
+        removed_files = sum(1 for item in directory.rglob("*") if item.is_file())
+        try:
+            shutil.rmtree(directory)
+        except OSError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=f"No se pudo borrar la carpeta del lote: {exc}",
+            ) from exc
+
+    removed_documents = database.delete_batch(name)
+    return {
+        "ok": True,
+        "batch": name,
+        "files": removed_files,
+        "documents": removed_documents,
     }
 
 
@@ -333,6 +411,7 @@ def export_zip(
     folder: str | None = Query(default=None),
 ) -> FileResponse:
     entries: list[tuple[Path, str]] = []
+    exported_batches: set[str] = set()
     for document in database.list_documents():
         if document["status"] == "missing":
             continue
@@ -345,6 +424,8 @@ def export_zip(
         path = settings.input_dir / relative
         if not path.is_file():
             continue
+        if document_batch:
+            exported_batches.add(document_batch)
         # Al exportar un solo lote el ZIP se abre directo en los archivos; al
         # exportar todo se conservan las carpetas para no mezclar lotes.
         if folder and document_batch:
@@ -379,6 +460,10 @@ def export_zip(
     except Exception:
         archive_path.unlink(missing_ok=True)
         raise
+
+    # Se marca antes de enviar: el aviso de "todavía no descargas este lote" que protege
+    # al botón de borrar debe apagarse aunque el navegador cancele la descarga a medias.
+    database.mark_batches_exported(sorted(exported_batches))
 
     label = (sanitize_folder_name(folder) or "raiz") if folder is not None else "todo"
     scope_label = "aprobados" if scope == "approved" else "todos"

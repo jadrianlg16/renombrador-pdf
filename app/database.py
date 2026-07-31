@@ -43,6 +43,15 @@ CREATE TABLE IF NOT EXISTS actions (
     FOREIGN KEY(document_id) REFERENCES documents(id)
 );
 
+-- Sólo los lotes creados por /api/upload se registran aquí. Es la lista blanca de lo
+-- que el botón "Limpiar lote" puede borrar: una carpeta copiada a mano nunca aparece.
+CREATE TABLE IF NOT EXISTS batches (
+    name TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    exported_at TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
 CREATE INDEX IF NOT EXISTS idx_actions_document ON actions(document_id);
 """
@@ -266,6 +275,66 @@ class Database:
                 """,
                 (document_id, None, restored_path, json.dumps({"action_id": action_id}), now),
             )
+
+    def register_batch(self, name: str) -> None:
+        now = utc_now()
+        with self._lock, self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO batches (name, created_at, updated_at) VALUES (?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET updated_at=excluded.updated_at
+                """,
+                (name, now, now),
+            )
+
+    def get_batch(self, name: str) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            row = connection.execute("SELECT * FROM batches WHERE name=?", (name,)).fetchone()
+        return dict(row) if row else None
+
+    def list_batches(self) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM batches ORDER BY created_at DESC, name"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def latest_batch(self) -> str | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT name FROM batches ORDER BY created_at DESC, rowid DESC LIMIT 1"
+            ).fetchone()
+        return row["name"] if row else None
+
+    def mark_batches_exported(self, names: list[str]) -> None:
+        if not names:
+            return
+        now = utc_now()
+        with self._lock, self.connect() as connection:
+            connection.executemany(
+                "UPDATE batches SET exported_at=?, updated_at=? WHERE name=?",
+                [(now, now, name) for name in names],
+            )
+
+    def delete_batch(self, name: str) -> int:
+        """Borra el registro del lote y los documentos que viven dentro de él."""
+        prefix = f"{name}/"
+        with self._lock, self.connect() as connection:
+            rows = connection.execute(
+                "SELECT id, current_relative_path, original_relative_path FROM documents"
+            ).fetchall()
+            # Se compara en Python: un nombre de lote con "%" o "_" rompería un LIKE.
+            ids = [
+                row["id"]
+                for row in rows
+                if row["current_relative_path"].startswith(prefix)
+                or row["original_relative_path"].startswith(prefix)
+            ]
+            for document_id in ids:
+                connection.execute("DELETE FROM actions WHERE document_id=?", (document_id,))
+                connection.execute("DELETE FROM documents WHERE id=?", (document_id,))
+            connection.execute("DELETE FROM batches WHERE name=?", (name,))
+        return len(ids)
 
     def history(self, limit: int = 100) -> list[dict[str, Any]]:
         with self.connect() as connection:

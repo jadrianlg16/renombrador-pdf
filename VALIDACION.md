@@ -66,13 +66,63 @@ Verificado con eventos de teclado sobre la aplicación en ejecución:
 - La carpeta temporal `data/state/exports` quedó vacía después de cada descarga.
 - Filtro sin resultados responde `404` en vez de entregar un ZIP vacío.
 
+### Limpiar lote (acción destructiva)
+
+El borrado está acotado por una lista blanca: la tabla `batches` sólo registra lo que entró
+por `/api/upload`, y `POST /api/batches/{nombre}/delete` exige que el nombre exista ahí.
+
+Comprobado con pruebas automáticas:
+
+- Borra la carpeta y los documentos del lote indicado y **no toca los demás lotes**.
+- Una carpeta copiada a mano en `data/inbox` responde `404` y sus archivos siguen ahí; el
+  endpoint `/api/batches` la marca `deletable: false`.
+- Nombres como `..`, `../..`, `Lote/../..` y espacios se rechazan; un archivo colocado fuera
+  de la bandeja sigue intacto después del intento y la propia bandeja no se borra.
+- Tras borrar, el nombre queda libre: volver a subir «Lote» crea `Lote`, no `Lote (2)`.
+- `/api/batches` refleja `exported_at` sólo después de descargar el ZIP de ese lote.
+
+Comprobado en el navegador:
+
+- Con «Todos» elegido el botón queda apagado con el motivo «no se borran todos a la vez».
+- Con la carpeta copiada a mano queda apagado explicando que no se subió desde la aplicación.
+- Con un lote subido, el botón muestra su nombre y cuántos archivos se van.
+- Antes de descargar el ZIP, la confirmación muestra el aviso rojo; después de descargarlo,
+  el aviso desaparece.
+- `Escape` y el clic fuera cierran el diálogo sin borrar nada; con el diálogo abierto los
+  atajos de teclado quedan inhibidos para que `Enter` no apruebe por detrás.
+- Al confirmar: se borran los 2 archivos, la carpeta desaparece del disco, la copiada a mano
+  sigue intacta y enseguida se pudo subir otra carpeta con el mismo nombre.
+
 ### Estado final
 
-- 30 pruebas automáticas aprobadas (`pytest`).
+- 40 pruebas automáticas aprobadas (`pytest`).
 - Sin errores en la consola del navegador ni en el registro del servidor durante todo el flujo.
 - No se pudo tomar una captura de pantalla: el panel del navegador no estaba visible y por eso
   la página no compone imagen. La interfaz se verificó por árbol de accesibilidad, geometría
   calculada de los elementos nuevos y ausencia de desborde horizontal.
+- Con el panel oculto el motor de estilos tampoco recalcula (`getComputedStyle` devolvía
+  `opacity: .42` en un botón habilitado, y un `!important` en línea no surtía efecto), así que
+  **el color del botón «Limpiar lote» no está verificado visualmente**. Lo que sí se verificó
+  es el orden y la especificidad de las reglas leídos del CSSOM: `.button.ghost.danger-text`
+  queda después de `.button.ghost` y con más especificidad, que era el error real de cascada.
+
+## Docker
+
+Imagen `sidetools/renombrador-pdf:latest` (833 MB) construida desde `python:3.12-slim`.
+Se agregó `.dockerignore`: el contexto pasaba 286 MB al daemon porque incluía `.venv`.
+
+Verificado dentro del contenedor, no sólo que arranque:
+
+- `tesseract_ready: true` con `spa` e `ing` disponibles.
+- Subida de una carpeta con subcarpeta: 3 guardados, 0 rechazados.
+- Render de página con PyMuPDF: PNG válido de 24 KB.
+- OCR real sobre la zona del nombre: leyó `MARIA DEL CARMEN RODRIGUEZ` con 95.5 % de confianza
+  (era el punto de riesgo, porque `opencv-python-headless` a veces pide librerías del sistema
+  que `slim` no trae).
+- Aprobación, renombrado dentro del volumen y descarga del ZIP con CRC íntegro.
+- Los datos sobreviven a reiniciar el contenedor (volumen `renombrador_pdf_data`).
+- Botones **Build**, **Start** y **Stop** del Project Dashboard: `success` con salida 0,
+  `running` y `absent` respectivamente.
 
 ## Pruebas automáticas
 

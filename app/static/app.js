@@ -11,6 +11,9 @@ const state = {
   ocrResult: null,
   busy: false,
   uploading: false,
+  batches: [],
+  latestUpload: null,
+  modalOpen: false,
 };
 
 const ALL_BATCHES = '__all__';
@@ -67,6 +70,12 @@ const elements = {
   exportScope: document.querySelector('#export-scope'),
   exportButton: document.querySelector('#export-button'),
   dropOverlay: document.querySelector('#drop-overlay'),
+  clearBatchButton: document.querySelector('#clear-batch-button'),
+  clearModal: document.querySelector('#clear-modal'),
+  clearModalTarget: document.querySelector('#clear-modal-target'),
+  clearModalWarning: document.querySelector('#clear-modal-warning'),
+  clearCancel: document.querySelector('#clear-cancel'),
+  clearConfirm: document.querySelector('#clear-confirm'),
 };
 
 const canvasContext = elements.canvas.getContext('2d');
@@ -126,9 +135,14 @@ function nextPendingIndex(fromIndex) {
 
 async function loadDocuments(options = {}) {
   const { preferredId = null, preferBatch = null, advanceFrom = null } = options;
-  const payload = await request('/api/documents');
+  const [payload, batchPayload] = await Promise.all([
+    request('/api/documents'),
+    request('/api/batches').catch(() => ({ batches: [], latest_upload: null })),
+  ]);
   state.documents = payload.documents;
   state.counts = payload.counts;
+  state.batches = batchPayload.batches || [];
+  state.latestUpload = batchPayload.latest_upload || null;
   renderProgress();
   renderExportFolders(preferBatch);
   renderQueue();
@@ -452,6 +466,75 @@ function updateExportControls() {
   elements.exportButton.disabled = state.busy || !count;
   elements.exportFolder.disabled = state.busy || !hasDocuments;
   elements.exportScope.disabled = state.busy || !hasDocuments;
+  updateClearBatchControls();
+}
+
+// El botón actúa sobre el lote elegido arriba, que tras subir una carpeta ya viene
+// seleccionado en la nueva: así "limpiar el último lote" es un solo clic.
+function selectedBatch() {
+  const { folder } = exportSelection();
+  if (folder === ALL_BATCHES) return null;
+  return state.batches.find((batch) => batch.name === folder) || null;
+}
+
+function updateClearBatchControls() {
+  const batch = selectedBatch();
+  const { folder } = exportSelection();
+  elements.clearBatchButton.disabled = state.busy || !batch?.deletable;
+  if (!batch) {
+    elements.clearBatchButton.textContent = 'Limpiar lote';
+    elements.clearBatchButton.title = folder === ALL_BATCHES
+      ? 'Elige un lote concreto arriba; no se borran todos a la vez.'
+      : 'Elige un lote para poder borrarlo.';
+    return;
+  }
+  elements.clearBatchButton.textContent = `Limpiar “${batch.name}” (${batch.documents})`;
+  elements.clearBatchButton.title = batch.deletable
+    ? `Borra del disco los ${batch.documents} archivos de “${batch.name}”.`
+    : 'Este lote no se subió desde la aplicación, así que no se borra desde aquí.';
+}
+
+function openClearModal() {
+  const batch = selectedBatch();
+  if (!batch?.deletable || state.busy) return;
+  const sinDescargar = batch.approved > 0 && !batch.exported_at;
+  const unico = batch.approved === 1;
+  const renombrados = unico ? '1 ya tiene su nombre nuevo' : `${batch.approved} ya tienen su nombre nuevo`;
+  elements.clearModalTarget.textContent =
+    `Se borrarán ${batch.documents} ${batch.documents === 1 ? 'archivo' : 'archivos'} del lote “${batch.name}”`
+    + `${batch.approved ? `, de los cuales ${renombrados}` : ''}.`;
+  elements.clearModalWarning.hidden = !sinDescargar;
+  elements.clearModalWarning.textContent = sinDescargar
+    ? 'Todavía no has descargado el ZIP de este lote. Si lo borras, pierdes '
+      + (unico ? 'el nombre que ya corregiste.' : `los ${batch.approved} nombres que ya corregiste.`)
+    : '';
+  elements.clearModal.hidden = false;
+  state.modalOpen = true;
+  elements.clearCancel.focus();
+}
+
+function closeClearModal() {
+  elements.clearModal.hidden = true;
+  state.modalOpen = false;
+}
+
+async function confirmClearBatch() {
+  const batch = selectedBatch();
+  closeClearModal();
+  if (!batch?.deletable) return;
+  try {
+    setBusy(true);
+    const result = await request(`/api/batches/${encodeURIComponent(batch.name)}/delete`, { method: 'POST' });
+    await loadDocuments();
+    showToast(
+      `Lote “${result.batch}” borrado: ${result.files} ${result.files === 1 ? 'archivo' : 'archivos'}. Ya puedes subir otra carpeta.`,
+      'success',
+    );
+  } catch (error) {
+    showToast(error.message, 'error');
+  } finally {
+    setBusy(false);
+  }
 }
 
 function downloadExport() {
@@ -864,6 +947,12 @@ elements.filesInput.addEventListener('change', async () => {
 elements.exportFolder.addEventListener('change', updateExportControls);
 elements.exportScope.addEventListener('change', updateExportControls);
 elements.exportButton.addEventListener('click', downloadExport);
+elements.clearBatchButton.addEventListener('click', openClearModal);
+elements.clearCancel.addEventListener('click', closeClearModal);
+elements.clearConfirm.addEventListener('click', confirmClearBatch);
+elements.clearModal.addEventListener('click', (event) => {
+  if (event.target === elements.clearModal) closeClearModal();
+});
 
 function dragCarriesFiles(dataTransfer) {
   return [...(dataTransfer?.types || [])].includes('Files');
@@ -900,6 +989,14 @@ window.addEventListener('drop', async (event) => {
 window.addEventListener('resize', redrawCanvas);
 window.addEventListener('keydown', (event) => {
   if (state.uploading) return;
+  // Con el diálogo de borrado abierto no debe dispararse ningún atajo detrás de él.
+  if (state.modalOpen) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeClearModal();
+    }
+    return;
+  }
   const activeTag = window.document.activeElement?.tagName;
   const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag)
     || Boolean(window.document.activeElement?.isContentEditable);

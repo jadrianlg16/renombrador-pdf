@@ -113,6 +113,85 @@ def test_export_across_batches_keeps_the_folder_prefix(client):
         assert sorted(archive.namelist()) == ["Lote A/a.pdf", "Lote B/b.pdf"]
 
 
+def test_deleting_a_batch_removes_its_files_and_documents(client):
+    test_client, module = client
+    upload(test_client, ["a.pdf", "sub/b.pdf"], folder="Lote A")
+    upload(test_client, ["c.pdf"], folder="Lote B")
+    assert test_client.get("/api/documents").json()["total"] == 3
+
+    response = test_client.post("/api/batches/Lote A/delete")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["files"] == 2 and payload["documents"] == 2
+
+    assert not (module.settings.input_dir / "Lote A").exists()
+    assert (module.settings.input_dir / "Lote B" / "c.pdf").is_file()
+    remaining = test_client.get("/api/documents").json()
+    assert remaining["total"] == 1
+    assert remaining["documents"][0]["current_relative_path"] == "Lote B/c.pdf"
+
+
+def test_deleting_a_batch_frees_the_name_for_a_new_upload(client):
+    test_client, module = client
+    first = upload(test_client, ["a.pdf"], folder="Lote").json()
+    assert first["batch"] == "Lote"
+    test_client.post("/api/batches/Lote/delete")
+    # Sin borrar, un segundo "Lote" se habria llamado "Lote (2)".
+    second = upload(test_client, ["b.pdf"], folder="Lote").json()
+    assert second["batch"] == "Lote"
+    assert (module.settings.input_dir / "Lote" / "b.pdf").is_file()
+
+
+def test_a_folder_copied_by_hand_is_not_deletable(client):
+    test_client, module = client
+    manual = module.settings.input_dir / "Copiada a mano"
+    manual.mkdir(parents=True)
+    (manual / "original.pdf").write_bytes(MINIMAL_PDF)
+    test_client.post("/api/sync")
+
+    response = test_client.post("/api/batches/Copiada a mano/delete")
+    assert response.status_code == 404
+    assert (manual / "original.pdf").is_file()
+
+    listed = {b["name"]: b for b in test_client.get("/api/batches").json()["batches"]}
+    assert listed["Copiada a mano"]["deletable"] is False
+
+
+@pytest.mark.parametrize("target", ["..", "../..", "  ", "Lote/../..", "raiz"])
+def test_delete_rejects_names_outside_the_whitelist(client, target: str):
+    test_client, module = client
+    upload(test_client, ["a.pdf"], folder="Lote")
+    outside = module.settings.input_dir.parent / "no-tocar.pdf"
+    outside.write_bytes(MINIMAL_PDF)
+
+    response = test_client.post(f"/api/batches/{target}/delete")
+    assert response.status_code in (404, 400, 405, 307)
+    assert outside.is_file()
+    assert module.settings.input_dir.is_dir()
+    assert (module.settings.input_dir / "Lote" / "a.pdf").is_file()
+
+
+def test_batches_endpoint_tracks_export_state(client):
+    test_client, _ = client
+    upload(test_client, ["a.pdf"], folder="Lote")
+    documents = test_client.get("/api/documents").json()["documents"]
+    test_client.post(f"/api/documents/{documents[0]['id']}/approve", json={"name": "ANA LOPEZ"})
+
+    before = next(b for b in test_client.get("/api/batches").json()["batches"] if b["name"] == "Lote")
+    assert before["approved"] == 1 and before["exported_at"] is None and before["deletable"] is True
+
+    test_client.get("/api/export", params={"scope": "approved", "folder": "Lote"})
+    after = next(b for b in test_client.get("/api/batches").json()["batches"] if b["name"] == "Lote")
+    assert after["exported_at"] is not None
+
+
+def test_latest_upload_points_at_the_most_recent_batch(client):
+    test_client, _ = client
+    upload(test_client, ["a.pdf"], folder="Primero")
+    upload(test_client, ["b.pdf"], folder="Segundo")
+    assert test_client.get("/api/batches").json()["latest_upload"] == "Segundo"
+
+
 def test_documents_keep_a_stable_order_after_approving(client):
     test_client, _ = client
     upload(test_client, ["S-0001.pdf", "S-0002.pdf", "S-0003.pdf"], folder="Lote")
