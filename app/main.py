@@ -380,11 +380,11 @@ def export_zip(
         archive_path.unlink(missing_ok=True)
         raise
 
-    label = sanitize_folder_name(folder) if folder else "todo"
+    label = (sanitize_folder_name(folder) or "raiz") if folder is not None else "todo"
     scope_label = "aprobados" if scope == "approved" else "todos"
     return FileResponse(
         archive_path,
         media_type="application/zip",
-        filename=f"renombrados-{label or 'raiz'}-{scope_label}.zip",
+        filename=f"renombrados-{label}-{scope_label}.zip",
         background=BackgroundTask(archive_path.unlink, missing_ok=True),
     )
