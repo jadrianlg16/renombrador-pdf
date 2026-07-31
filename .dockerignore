@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.git/
+.claude/
+tests/
+data/
+*.log
+*.zip
+README.md
+VALIDACION.md
+*.bat
+run_linux.sh
+launcher.py
+generate_demo_pdf.py

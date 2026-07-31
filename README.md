@@ -63,13 +63,32 @@ La aplicación busca automáticamente Tesseract en:
 - `C:\Program Files\Tesseract-OCR\tesseract.exe`;
 - la ruta definida en `TESSERACT_CMD`.
 
-## Uso con Docker Desktop
+## Uso desde el Project Dashboard
+
+Registrado como `renombrador-pdf` en el puerto **5027**. En la tarjeta: **Rebuild** para
+construir la imagen, el interruptor para encenderlo y **Open ↗** para abrirlo.
+
+Los archivos viven en el volumen de Docker `renombrador_pdf_data` (montado en `/app/data`),
+no en la carpeta `data/` del proyecto. Es decir: por aquí **se sube la carpeta desde el
+navegador y se descarga el ZIP** — no puedes copiar PDF a mano a `data/inbox`. Los datos
+sobreviven a reinicios y a apagar y prender el contenedor.
+
+Desde **Env** puedes ajustar `OCR_LANGUAGES`, `PDF_OCR_DPI` y `PDF_RENDER_DPI` sin reconstruir.
+
+Para empezar de cero y borrar todo lo subido:
+
+```bash
+docker volume rm renombrador_pdf_data
+```
+
+## Uso con Docker Desktop (compose)
 
 ```bash
 docker compose up --build
 ```
 
-Después abre `http://127.0.0.1:8765`. La carpeta local `data/inbox` queda montada dentro del contenedor.
+Después abre `http://127.0.0.1:8765`. A diferencia del dashboard, aquí la carpeta local
+`data/inbox` sí queda montada dentro del contenedor, así que puedes copiar los PDF a mano.
 
 ## Uso manual en macOS o Linux
 
