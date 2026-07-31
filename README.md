@@ -50,6 +50,13 @@ salir del campo: `Alt+→`, `Alt+S`, `Ctrl+Alt+Z`.
 5. Ejecuta `run_windows.bat`.
 6. El navegador se abre automáticamente. Normalmente usará `http://127.0.0.1:8765`; si ese puerto está ocupado elegirá otro entre 8765 y 8799.
 
+### Cómo cerrar la aplicación
+
+- Lo normal: presiona `Ctrl+C` en la ventana negra que se abrió al iniciar, o simplemente ciérrala.
+- Si perdiste la ventana o hay varias instancias abiertas: ejecuta `stop_windows.bat`. Revisa
+  los puertos 8765 a 8799, confirma con `/api/health` que cada uno sea el Renombrador (no toca
+  otros programas) y cierra todas las instancias que encuentre.
+
 La aplicación busca automáticamente Tesseract en:
 
 - el `PATH` del sistema;
