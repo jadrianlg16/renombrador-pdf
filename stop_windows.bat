@@ -1,7 +1,9 @@
 @echo off
 setlocal
-REM Cierra todas las instancias del Renombrador PDF (puertos 8765-8799).
-REM Verifica cada puerto con /api/health para no tocar otros programas.
+REM Cierra las instancias del Renombrador PDF iniciadas con launcher.py o uvicorn (puertos 8765-8799).
+REM Un puerto solo se cierra si /api/health responde como esta aplicacion Y el proceso dueno del
+REM puerto es el Python que ejecuta app.main:app. Un contenedor de Docker tambien responde al
+REM health check, pero su puerto pertenece al backend de Docker Desktop, que nunca se toca.
 echo Buscando instancias del Renombrador PDF en los puertos 8765-8799...
 echo.
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
@@ -10,7 +12,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
  "  $port = $_.LocalPort; $ownerPid = $_.OwningProcess;" ^
  "  try { $h = Invoke-RestMethod ('http://127.0.0.1:' + $port + '/api/health') -TimeoutSec 2 } catch { return };" ^
  "  $esRenombrador = ($h.app_id -eq 'renombrador-pdf') -or ($h.ok -and $h.input_dir -and $h.ocr_languages);" ^
- "  if ($esRenombrador) { Stop-Process -Id $ownerPid -Force; Write-Host ('Cerrado: puerto ' + $port + ' (PID ' + $ownerPid + ') -> ' + $h.input_dir); $found = $true }" ^
+ "  if (-not $esRenombrador) { return };" ^
+ "  $proc = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $ownerPid) -ErrorAction SilentlyContinue;" ^
+ "  $esPython = $proc -and ($proc.Name -match '^python(w|[0-9.]+)?\.exe$') -and ($proc.CommandLine -match 'app\.main:app');" ^
+ "  if (-not $esPython) { $nombre = if ($proc) { $proc.Name } else { 'desconocido' }; Write-Host ('Omitido: el puerto ' + $port + ' lo atiende ' + $nombre + ' (PID ' + $ownerPid + '), no el Python del Renombrador. Si es el contenedor de Docker, detenlo con docker stop.'); return };" ^
+ "  Stop-Process -Id $ownerPid -Force; Write-Host ('Cerrado: puerto ' + $port + ' (PID ' + $ownerPid + ') -> ' + $h.input_dir); $found = $true" ^
  "};" ^
  "if (-not $found) { Write-Host 'No hay ninguna instancia del Renombrador PDF corriendo.' }"
 echo.
