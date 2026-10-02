@@ -131,6 +131,7 @@ Variables de entorno:
 | `PDF_RENDER_DPI` | `150` | Resolución de las imágenes de página que muestra el visor |
 | `OCR_LANGUAGES` | `spa+eng` | Idiomas de Tesseract |
 | `TESSERACT_CMD` | autodetección | Ruta al ejecutable de Tesseract |
+| `ALLOWED_HOSTS` | (vacío) | Nombres de host adicionales, separados por comas, a los que responde además de `localhost`, `127.0.0.1` y `[::1]`; solo si la expones a propósito en tu red |
 
 El límite por archivo subido es de 300 MB: el navegador deja fuera los archivos más grandes y los reporta como rechazados, y el servidor corta una petición más grande sin esperar a recibirla completa. El navegador envía la carpeta en tandas de hasta 25 archivos o 40 MB, para que un lote grande no dependa de una sola petición.
 
@@ -139,7 +140,7 @@ El límite por archivo subido es de 300 MB: el navegador deja fuera los archivos
 - Cada aprobación queda registrada en `data/state/renamer.db`. El botón **Deshacer último** restaura el nombre anterior, siempre que no exista ya otro archivo con ese nombre. Puedes presionarlo varias veces para deshacer, uno por uno, los renombrados más recientes.
 - Los archivos nunca se sobrescriben: si el nombre ya existe, se agrega `(2)`, `(3)`, etc. Se conservan los acentos y se reemplazan los caracteres que Windows no acepta.
 - Si copias tus PDF directamente a `data/inbox` (en lugar de subirlos), se renombran esos mismos archivos. Para tener un respaldo, duplica la carpeta original antes de empezar.
-- La aplicación no tiene usuarios ni contraseñas: cualquiera que pueda abrir su dirección puede ver, renombrar y borrar archivos. Rechaza las peticiones que llegan desde otras páginas web, pero eso no sustituye una contraseña. Úsala solo en `127.0.0.1` y no la expongas en una red.
+- La aplicación no tiene usuarios ni contraseñas: cualquiera que pueda abrir su dirección puede ver, renombrar y borrar archivos. Solo responde a `localhost`, `127.0.0.1` y `[::1]` (más lo que agregues en `ALLOWED_HOSTS`) y rechaza las peticiones que llegan desde otras páginas web, pero eso no sustituye una contraseña. Úsala solo en `127.0.0.1` y no la expongas en una red.
 
 ## Problemas frecuentes
 
@@ -152,5 +153,7 @@ El límite por archivo subido es de 300 MB: el navegador deja fuera los archivos
 En Windows: `.venv\Scripts\python launcher.py --port 8770`.
 
 **El OCR responde que no encuentra Tesseract.** Instálalo con el idioma español (ver [Requisitos](#requisitos)) o define `TESSERACT_CMD` con la ruta completa al ejecutable. La dirección `/api/health` de la aplicación muestra si Tesseract está listo (`tesseract_ready`) y qué idiomas tiene instalados.
+
+**Aparece «Nombre de host no permitido».** Abriste la aplicación con otro nombre, por ejemplo la IP de tu equipo en la red. Usa `http://127.0.0.1` con el mismo puerto, o agrega ese nombre a `ALLOWED_HOSTS`.
 
 **Después de actualizar el código, la página se ve rara.** Presiona `Ctrl+F5` una vez para que el navegador cargue la versión nueva.

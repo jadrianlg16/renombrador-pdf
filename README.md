@@ -46,8 +46,8 @@ flowchart LR
 
 ## Engineering highlights
 
-- **Upload paths can't escape the inbox.** Each path component the browser sends is cleaned: drive letters and `..` are dropped, characters Windows rejects become spaces, each component is capped at 120 characters, and only the last six levels are kept. Then the destination is checked with `resolve().relative_to(inbox)` before anything is written. The same check runs before a stored document is served, rendered, read by OCR or approved. See `safe_upload_relative_path` in [`app/naming.py`](app/naming.py), and `_store_upload` and `_document_path` in [`app/main.py`](app/main.py).
-- **Requests are vetted before the app reads them.** The app has no login, so the guard against other web pages is the browser's own `Origin` header: a POST must name the host it was sent to (or, without `Origin`, carry a `Sec-Fetch-Site` that isn't cross-site), or it gets 403. A request with neither header comes from curl or a script; a web page can't make a browser send one, so it is allowed. Bodies are capped the same way: a `Content-Length` over the limit gets 413 at once, and a streamed body is cut off as soon as it passes it. Starlette would otherwise buffer a whole upload before the endpoint could check its size. The limit is 300 MB for uploads and 1 MB for everything else, and an upload must still start with `%PDF-`, whatever its extension. See [`app/security.py`](app/security.py) and `_store_upload` in [`app/main.py`](app/main.py).
+- **Upload paths can't escape the inbox.** Each path component the browser sends is cleaned: drive letters and `..` are dropped, characters Windows rejects become spaces, each component is capped at 120 characters, and only the last six levels are kept. Then the destination is checked with `resolve().relative_to(inbox)` before anything is written, and the file must start with `%PDF-`, whatever its extension. The same check runs before a stored document is served, rendered, read by OCR or approved. See `safe_upload_relative_path` in [`app/naming.py`](app/naming.py), and `_store_upload` and `_document_path` in [`app/main.py`](app/main.py).
+- **Other sites and oversized requests are stopped before the app reads them.** The app has no login, so it relies on what the browser reports. `Host` must be a loopback name or one listed in `ALLOWED_HOSTS`, which defeats DNS rebinding. A POST must carry an `Origin` for that same host and port, or, without `Origin`, a `Sec-Fetch-Site` that isn't cross-site; curl and scripts send neither and are allowed. Fetch metadata also stops other sites from loading the API in the background (so an `<img>` can't mark a batch as exported) or framing the page, and the page's Content-Security-Policy forbids framing too. Bodies are capped before Starlette buffers them: a `Content-Length` over the limit gets 413 at once and a streamed body is cut off as it passes it (300 MB for uploads, 1 MB otherwise). See [`app/security.py`](app/security.py).
 - **Deletion goes through a whitelist.** `POST /api/batches/{name}/delete` only accepts names in the `batches` table. Those are folders created by an upload, plus top-level inbox folders that the sync adopts. The endpoint refuses the inbox root and re-checks containment before `shutil.rmtree`, and loose PDFs in the inbox root never form a deletable batch. See `delete_batch` in [`app/main.py`](app/main.py) and the `batches` table in [`app/database.py`](app/database.py).
 - **Disagreement between readings forces review.** `recognize_crop` collects every candidate, removes duplicates and ranks them. `_candidates_disagree` then compares the winner with the alternatives of similar confidence (`difflib` ratio below 0.985), so a 95% reading can still be flagged when another reading says something different. See [`app/ocr.py`](app/ocr.py).
 - **Windows-safe names, validated input.** `sanitize_pdf_name` applies NFC normalization, replaces `<>:"/\|?*` and control characters, trims leading and trailing dots and spaces, and suffixes reserved device names (`CON` becomes `CON_`). `unique_target` picks a free ` (n)` name instead of overwriting. Request bodies are Pydantic models with bounds: box coordinates between 0 and 1, at most 20 boxes per request, and names of 1 to 220 characters. See [`app/naming.py`](app/naming.py) and [`app/models.py`](app/models.py).
@@ -66,7 +66,7 @@ flowchart LR
 - **Regions instead of full-page OCR.** The operator already knows where the name is. Reading a small crop at high resolution is quick and can't pick the wrong name from a page full of names.
 - **The files are the source of truth.** On startup, and whenever you press *Actualizar carpeta*, the inbox is rescanned: new PDFs are added, vanished ones are marked missing, and returning ones are restored.
 - **Uploads are copies.** Uploaded files are copied into `data/inbox/<batch>`, and renames happen there, so the originals on your disk are left alone.
-- **The container runs unprivileged.** `docker-entrypoint.sh` starts as root only to fix ownership, then drops privileges with `setpriv`. The server runs as whoever owns `/app/data`: the `app` user (uid 10001) for a named volume, including one written by an older image that ran as root, or your own user when you bind-mount a folder you own on Linux. Files inside that belong to someone else are handed to that user. If the filesystem refuses `chown`, the entrypoint logs a warning and runs the server as root, as older images did.
+- **The container runs unprivileged.** `docker-entrypoint.sh` starts as root only to fix ownership, then drops privileges with `setpriv`. The server runs as whoever owns `/app/data`: the `app` user (uid 10001) for a named volume, including one written by an older image that ran as root, or your own user when you bind-mount a folder you own on Linux. Files inside that belong to someone else are handed to that user, without ever following a symlink, and the server runs with `no_new_privs`. If the filesystem refuses `chown`, the entrypoint logs a warning and runs the server as root, as older images did.
 - **Typed, documented code.** The `app/` package has type annotations on every parameter and a docstring on every public function, and ruff enforces lint, formatting and the docstrings.
 
 ### Project structure
@@ -74,7 +74,7 @@ flowchart LR
 ```text
 app/
   main.py              FastAPI routes: documents, OCR, approve/skip/undo, upload, batches, export
-  security.py          same-origin check and request body limits (ASGI middleware)
+  security.py          host allowlist, cross-site checks, body limits, security headers
   ocr.py               page and crop rendering, preprocessing variants, Tesseract runs, ranking
   naming.py            filename and upload-path sanitizing, collision-free targets
   database.py          SQLite schema, inbox sync, action history, batch registry
@@ -148,7 +148,7 @@ docker run --rm -p 127.0.0.1:8765:8000 -v "$PWD/data:/app/data" renombrador-pdf
 
 Then open `http://127.0.0.1:8765`. The image already includes Tesseract with Spanish and English. The mount makes the container use this repo's `data/` folder, so files you copy into `data/inbox` show up in the app. In PowerShell the same two lines work unchanged. `docker compose up --build` does the same, also publishing on `127.0.0.1` only.
 
-The server in the container runs as an unprivileged user, not root. On Linux, when the mounted `data/` folder belongs to you, it runs as your user, so the files it creates stay yours.
+The server in the container runs as an unprivileged user, not root. On Linux, when the mounted `data/` folder belongs to you, it runs as your user, so the files it creates stay yours. The app answers only to `localhost`, `127.0.0.1` and `[::1]`; to open it by another name, such as the machine's LAN address, pass it in `ALLOWED_HOSTS` (for example `-e ALLOWED_HOSTS=192.168.1.20`).
 
 ## Tests, lint and CI
 
@@ -161,7 +161,7 @@ The server in the container runs as an unprivileged user, not root. On Linux, wh
 
 On Windows, use `.venv\Scripts\python` in place of `.venv/bin/python`. `requirements-dev.txt` adds pytest, httpx (FastAPI's `TestClient` needs it) and a pinned ruff to the runtime requirements.
 
-The tests run the HTTP API against a temporary inbox: uploads, path traversal, ZIP layout, batch-deletion rules, approving, undo, skipping, cross-site rejection and the body limits. They also cover filename sanitizing, OCR text cleanup, word segmentation, how readings are ranked and when they are flagged for review, and the launcher's port selection. Tesseract is faked where needed, so the tests don't need it installed.
+The tests run the HTTP API against a temporary inbox: uploads, path traversal, ZIP layout, batch-deletion rules, approving, undo, skipping, the host allowlist, cross-site and fetch-metadata rules, security headers, body limits, render limits and error messages. They also cover filename sanitizing, OCR text cleanup, word segmentation, how readings are ranked and when they are flagged for review, and the launcher's port selection. Tesseract is faked where needed, so the tests don't need it installed.
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the same install, lint and test commands on Ubuntu, then builds the Docker image and checks that it answers `/api/health` with Spanish OCR available and runs as a non-root user. Each step has been run locally, but the workflow has not run on GitHub yet.
 
@@ -177,12 +177,13 @@ The app reads these environment variables:
 | `PDF_RENDER_DPI` | `150` | Resolution of the page images in the viewer. A request can still pass `dpi` (72 to 250). |
 | `OCR_LANGUAGES` | `spa+eng` | Tesseract language string. |
 | `TESSERACT_CMD` | auto-detected | Full path to the `tesseract` executable. |
+| `ALLOWED_HOSTS` | empty | Extra host names, comma-separated, that the app answers to besides `localhost`, `127.0.0.1` and `[::1]` (any port). Only for a deliberate LAN or reverse-proxy setup. |
 
-The defaults are relative to the repo root; a relative path you set yourself is resolved from the current directory. Some limits are fixed in code: 300 MB per upload request, 1 MB for any other request, 20 boxes per OCR request and 220 characters per name. The browser sends uploads in requests of at most 25 files or 40 MB, so a larger file goes alone, and it leaves out and reports any file over 300 MB.
+The defaults are relative to the repo root; a relative path you set yourself is resolved from the current directory. Some limits are fixed in code: 300 MB per upload request, 1 MB for any other request, 20 boxes per OCR request, 220 characters per name, and 40 megapixels per rendered page or OCR crop (a larger one is rendered at a lower resolution). The browser sends uploads in requests of at most 25 files or 40 MB, so a larger file goes alone, and it leaves out and reports any file over 300 MB.
 
 ## Limitations
 
-- **Local, single-user tool.** There is no authentication: anyone who can reach the port can rename and delete files. Requests from other web pages are refused, but the `Host` header is not checked against an allowlist, so DNS rebinding is not blocked. Uploads are only checked for a `%PDF-` signature. Run it on your own machine with files you trust, and keep it on `127.0.0.1`, as the launcher, the Docker commands above and `docker-compose.yml` do.
+- **Local, single-user tool.** There is no authentication: anyone who can reach the port can rename and delete files. Other web pages can't drive it through your browser, but uploads are only checked for a `%PDF-` signature. Run it on your own machine with files you trust, and keep it on `127.0.0.1`, as the launcher, the Docker commands above and `docker-compose.yml` do.
 - **OCR quality follows scan quality.** The confidence number is advisory, and faint, skewed or handwritten names can need manual correction. That is why review can't be skipped.
 - **Renames happen in place.** If you copy files into `data/inbox`, or mount a real folder there, those files are renamed, and *Limpiar lote* deletes them permanently. Only browser uploads are copies.
 - **Spanish-only interface.** `OCR_LANGUAGES` changes the OCR languages, but every label and message is in Spanish.
