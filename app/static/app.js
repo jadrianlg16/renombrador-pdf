@@ -483,17 +483,19 @@ function updateClearBatchControls() {
   const batch = selectedBatch();
   const { folder } = exportSelection();
   elements.clearBatchButton.disabled = state.busy || !batch?.deletable;
-  if (!batch) {
+  if (!batch?.deletable) {
     elements.clearBatchButton.textContent = 'Limpiar lote';
-    elements.clearBatchButton.title = folder === ALL_BATCHES
-      ? 'Elige un lote concreto arriba; no se borran todos a la vez.'
-      : 'Elige un lote para poder borrarlo.';
+    if (folder === ALL_BATCHES) {
+      elements.clearBatchButton.title = 'Elige un lote concreto arriba; no se borran todos a la vez.';
+    } else if (folder === '') {
+      elements.clearBatchButton.title = 'Los PDF sueltos en la raíz de la bandeja no forman lote y no se borran desde aquí.';
+    } else {
+      elements.clearBatchButton.title = 'Este lote no se puede borrar desde aquí.';
+    }
     return;
   }
   elements.clearBatchButton.textContent = `Limpiar “${batch.name}” (${batch.documents})`;
-  elements.clearBatchButton.title = batch.deletable
-    ? `Borra del disco los ${batch.documents} archivos de “${batch.name}”.`
-    : 'Los PDF sueltos en la raíz de la bandeja no forman lote y no se borran desde aquí.';
+  elements.clearBatchButton.title = `Borra del disco los ${batch.documents} archivos de “${batch.name}”.`;
 }
 
 function openClearModal() {

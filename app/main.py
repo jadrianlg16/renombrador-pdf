@@ -39,6 +39,7 @@ UPLOAD_CHUNK_BYTES = 1024 * 1024
 
 settings = get_settings()
 database = Database(settings)
+STATIC_DIR = settings.base_dir / "app" / "static"
 
 
 @asynccontextmanager
@@ -56,7 +57,7 @@ app.add_middleware(
 )
 # Added last so it runs first: a cross-site request is refused before its body is read.
 app.add_middleware(SameOriginMiddleware)
-app.mount("/static", StaticFiles(directory=settings.base_dir / "app" / "static"), name="static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 def _get_document_or_404(document_id: str) -> dict:
@@ -79,7 +80,12 @@ def _document_path(document: dict) -> Path:
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> FileResponse:
-    return FileResponse(settings.base_dir / "app" / "static" / "index.html")
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> FileResponse:
+    return FileResponse(STATIC_DIR / "favicon.ico", media_type="image/x-icon")
 
 
 @app.get("/api/health")

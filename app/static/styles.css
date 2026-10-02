@@ -207,7 +207,9 @@ textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(110,16
 .review-actions { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 18px; }
 .shortcut-card { margin-top: 18px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; }
 .shortcut-card h3 { margin: 0 0 10px; font-size: 12px; }
-.shortcut-card div { display: grid; grid-template-columns: 90px 1fr; gap: 8px; margin-top: 7px; color: var(--muted); font-size: 11px; }
+.shortcut-card div { display: grid; grid-template-columns: 90px 1fr; align-items: center; gap: 8px; margin-top: 7px; color: var(--muted); font-size: 11px; }
+/* One grid cell for all the keys of a row, so "Ctrl + Z" never spills into the description column. */
+.shortcut-card .keys { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 kbd { display: inline-block; color: var(--text); background: #272d35; border: 1px solid #3a424d; border-bottom-width: 2px; border-radius: 5px; padding: 2px 5px; font-size: 10px; }
 .queue-details { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 13px; }
 .queue-details summary { cursor: pointer; font-size: 12px; font-weight: 800; }
