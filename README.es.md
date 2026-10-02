@@ -49,7 +49,7 @@ La aplicación busca Tesseract en este orden:
 
 ```bash
 python3.12 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip install -r requirements.txt -c constraints.txt
 .venv/bin/python launcher.py
 ```
 

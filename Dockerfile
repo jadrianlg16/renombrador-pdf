@@ -19,8 +19,8 @@ RUN groupadd --gid 10001 app \
         --shell /usr/sbin/nologin app
 
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt constraints.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 COPY app ./app
 COPY --chmod=0755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN mkdir -p /app/data/inbox /app/data/state && chown -R app:app /app/data

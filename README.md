@@ -90,7 +90,8 @@ run_linux.sh           starts the launcher from .venv (macOS / Linux)
 *_windows.bat          setup, run and stop helpers (Windows)
 Dockerfile             Python 3.12 slim image with Tesseract (spa, eng); docker-compose.yml wraps it
 docker-entrypoint.sh   fixes /app/data ownership, then runs the server as an unprivileged user
-requirements*.txt      runtime dependencies; requirements-dev.txt adds pytest, httpx and ruff
+requirements*.txt      allowed version ranges; requirements-dev.txt adds pytest, httpx and ruff
+constraints.txt        the exact versions the tests, CI and the Docker image use
 pyproject.toml         ruff and pytest settings
 .github/workflows/     CI: lint, tests, and a Docker build with a health check
 ```
@@ -116,7 +117,7 @@ macOS / Linux:
 
 ```bash
 python3.12 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip install -r requirements.txt -c constraints.txt
 .venv/bin/python launcher.py
 ```
 
@@ -124,7 +125,7 @@ Windows (PowerShell):
 
 ```powershell
 py -3.12 -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -m pip install -r requirements.txt -c constraints.txt
 .venv\Scripts\python launcher.py
 ```
 
@@ -153,13 +154,13 @@ The server in the container runs as an unprivileged user, not root. On Linux, wh
 ## Tests, lint and CI
 
 ```bash
-.venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python -m pip install -r requirements-dev.txt -c constraints.txt
 .venv/bin/python -m pytest
 .venv/bin/python -m ruff check .
 .venv/bin/python -m ruff format --check .
 ```
 
-On Windows, use `.venv\Scripts\python` in place of `.venv/bin/python`. `requirements-dev.txt` adds pytest, httpx (FastAPI's `TestClient` needs it) and a pinned ruff to the runtime requirements.
+On Windows, use `.venv\Scripts\python` in place of `.venv/bin/python`. `requirements-dev.txt` adds pytest, httpx (FastAPI's `TestClient` needs it) and a pinned ruff to the runtime requirements. `constraints.txt` pins every package, transitive ones included, to the versions CI and the Docker image use; after changing a range in `requirements*.txt`, install without `-c`, run the tests, and regenerate it with `pip freeze`.
 
 The tests run the HTTP API against a temporary inbox: uploads, path traversal, ZIP layout, batch-deletion rules, approving, undo, skipping, the host allowlist, cross-site and fetch-metadata rules, security headers, body limits, render limits and error messages. They also cover filename sanitizing, OCR text cleanup, word segmentation, how readings are ranked and when they are flagged for review, and the launcher's port selection. Tesseract is faked where needed, so the tests don't need it installed.
 

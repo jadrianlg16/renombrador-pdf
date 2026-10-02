@@ -1,8 +1,9 @@
 # Build context allowlist: the image only needs the app package, its requirements and
-# the entrypoint script.
+# pinned versions, and the entrypoint script.
 *
 !app
 !requirements.txt
+!constraints.txt
 !docker-entrypoint.sh
 **/__pycache__
 **/*.py[cod]
