@@ -2,11 +2,10 @@ __pycache__/
 *.py[cod]
 .venv/
 .pytest_cache/
+.ruff_cache/
 data/state/*.db
 data/state/*.db-*
 data/state/exports/
 data/inbox/*.pdf
 data/inbox/*/
 !data/inbox/.gitkeep
-
-.claude/

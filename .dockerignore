@@ -1,15 +1,6 @@
-.venv/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.git/
-.claude/
-tests/
-data/
-*.log
-*.zip
-README.md
-*.bat
-run_linux.sh
-launcher.py
-generate_demo_pdf.py
+# Build context allowlist: the image only needs the app package and its requirements.
+*
+!app
+!requirements.txt
+**/__pycache__
+**/*.py[cod]
