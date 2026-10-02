@@ -4,7 +4,7 @@
 
 Aplicación local para renombrar un lote de PDF escaneados. Marcas con el mouse dónde está el nombre, el sistema lo lee con OCR sólo en esa zona y propone el nombre del archivo. El archivo se renombra únicamente cuando una persona revisa la propuesta y la aprueba.
 
-Todo corre en tu equipo: los PDF y los recortes no se envían a ningún servicio externo. El sistema sólo cambia el nombre de los archivos; nunca modifica su contenido.
+Todo corre en tu equipo: los PDF y los recortes no se envían a ningún servicio externo. Al aprobar, el sistema sólo cambia el nombre del archivo; nunca modifica su contenido.
 
 ![Pantalla de revisión con una caja sobre el nombre, el nombre propuesto por el OCR y los recortes para comparar](docs/review.png)
 
@@ -53,7 +53,7 @@ python3.12 -m venv .venv
 .venv/bin/python launcher.py
 ```
 
-El lanzador elige un puerto libre entre 8765 y 8799 y abre el navegador cuando la aplicación está lista.
+El lanzador elige un puerto libre entre 8765 y 8799 y abre el navegador cuando la aplicación está lista. Una vez creado `.venv`, también puedes iniciarla con `sh run_linux.sh`.
 
 ### Docker
 

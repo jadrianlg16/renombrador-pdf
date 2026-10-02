@@ -63,7 +63,7 @@ flowchart LR
 
 ## Engineering highlights
 
-- **Upload paths can't escape the inbox.** Each path component the browser sends is cleaned: drive letters and `..` are dropped, characters Windows rejects become spaces, each component is capped at 120 characters, and only the last six levels are kept. Then the destination is checked with `resolve().relative_to(inbox)` before anything is written. The same check runs before any stored document is read, rendered or renamed. See `safe_upload_relative_path` in [`app/naming.py`](app/naming.py), and `_store_upload` and `_document_path` in [`app/main.py`](app/main.py).
+- **Upload paths can't escape the inbox.** Each path component the browser sends is cleaned: drive letters and `..` are dropped, characters Windows rejects become spaces, each component is capped at 120 characters, and only the last six levels are kept. Then the destination is checked with `resolve().relative_to(inbox)` before anything is written. The same check runs before a stored document is served, rendered, read by OCR or approved. See `safe_upload_relative_path` in [`app/naming.py`](app/naming.py), and `_store_upload` and `_document_path` in [`app/main.py`](app/main.py).
 - **Uploads are sniffed and capped.** The extension isn't trusted: the first five bytes must be `%PDF-`. The file is then copied into the inbox in 1 MB chunks, and the copy is deleted and rejected as soon as it passes 300 MB. See `_store_upload` in [`app/main.py`](app/main.py).
 - **Deletion goes through a whitelist.** `POST /api/batches/{name}/delete` only accepts names in the `batches` table. Those are folders created by an upload, plus top-level inbox folders that the sync adopts. The endpoint refuses the inbox root and re-checks containment before `shutil.rmtree`, and loose PDFs in the inbox root never form a deletable batch. See `delete_batch` in [`app/main.py`](app/main.py) and the `batches` table in [`app/database.py`](app/database.py).
 - **Disagreement between readings forces review.** `recognize_crop` collects every candidate, removes duplicates and ranks them. `_candidates_disagree` then compares the winner with the alternatives of similar confidence (`difflib` ratio below 0.985), so a 95% reading can still be flagged when another reading says something different. See [`app/ocr.py`](app/ocr.py).
@@ -101,6 +101,7 @@ data/inbox/          PDFs to rename (contents git-ignored)
 data/state/          SQLite database and temporary ZIP exports (git-ignored)
 launcher.py          picks a free port, waits for /api/health, opens the browser
 generate_demo_pdf.py writes a one-page demo PDF into data/inbox
+run_linux.sh         starts the launcher from .venv (macOS / Linux)
 setup_windows.bat    creates .venv and installs requirements (Windows)
 run_windows.bat      starts the launcher (Windows)
 stop_windows.bat     stops every running instance on ports 8765-8799 (Windows)
@@ -121,14 +122,7 @@ docker-compose.yml   compose service with data/ mounted
 | macOS (Homebrew) | `brew install tesseract tesseract-lang` |
 | Debian / Ubuntu | `sudo apt-get install tesseract-ocr tesseract-ocr-spa` |
 
-To check the install, run `tesseract --list-langs`; the output should list `eng` and `spa`. The app looks for Tesseract in this order:
-
-1. the `TESSERACT_CMD` environment variable;
-2. `tesseract` on `PATH`;
-3. `C:\Program Files\Tesseract-OCR\tesseract.exe`;
-4. `C:\Program Files (x86)\Tesseract-OCR\tesseract.exe`.
-
-Once the app is running, `GET /api/health` reports `tesseract_ready` and the installed languages.
+To check the install, run `tesseract --list-langs`; the output should list `eng` and `spa`. The app looks for Tesseract in `TESSERACT_CMD` first, then on `PATH`, then in the Windows installer's default folders (`C:\Program Files\Tesseract-OCR` and `C:\Program Files (x86)\Tesseract-OCR`). Once the app is running, `GET /api/health` reports `tesseract_ready` and the installed languages.
 
 ### Quick start
 
@@ -148,7 +142,9 @@ py -3.12 -m venv .venv
 .venv\Scripts\python launcher.py
 ```
 
-The launcher binds to `127.0.0.1` and takes the first free port from 8765 to 8799. It waits until `/api/health` answers, then opens your browser. Use `--port 8770` to choose the port and `--no-browser` to skip opening the browser; press `Ctrl+C` to stop. On Windows, `setup_windows.bat` and `run_windows.bat` do the same steps from a double-click. `stop_windows.bat` stops every running instance, and it checks `/api/health` on each port first, so it only stops this app.
+The launcher binds to `127.0.0.1` and takes the first free port from 8765 to 8799. It waits until `/api/health` answers, then opens your browser. Use `--port 8770` to choose the port and `--no-browser` to skip opening the browser; press `Ctrl+C` to stop.
+
+Helper scripts: once `.venv` exists, `sh run_linux.sh` starts the launcher on macOS / Linux. On Windows, `setup_windows.bat` and `run_windows.bat` do the install and start steps from a double-click. `stop_windows.bat` stops every running instance; it checks `/api/health` on each port first so it leaves other programs alone, with one exception covered under [Limitations](#limitations).
 
 To start Uvicorn yourself instead (shown for macOS / Linux; on Windows use `.venv\Scripts\python`):
 
@@ -171,7 +167,7 @@ docker build -t renombrador-pdf .
 docker run --rm -p 127.0.0.1:8765:8000 -v "$PWD/data:/app/data" renombrador-pdf
 ```
 
-Then open <http://127.0.0.1:8765>. The image already includes Tesseract with Spanish and English. The mount makes the container use this repo's `data/` folder, so files you copy into `data/inbox` show up in the app. In PowerShell the same two lines work unchanged. `docker-compose.yml` is also included, but it publishes the port on every network interface; see [Limitations](#limitations).
+Then open `http://127.0.0.1:8765`. The image already includes Tesseract with Spanish and English. The mount makes the container use this repo's `data/` folder, so files you copy into `data/inbox` show up in the app. In PowerShell the same two lines work unchanged. `docker-compose.yml` is also included, but it publishes the port on every network interface; see [Limitations](#limitations).
 
 ## Tests
 
@@ -208,7 +204,7 @@ The defaults are relative to the repo root; a relative path you set yourself is 
 - **OCR quality follows scan quality.** The confidence number is advisory. Faint, skewed or handwritten names can need manual correction, which is why review can't be skipped.
 - **Spanish-only interface.** The OCR languages can be changed with `OCR_LANGUAGES`, but every label and message is in Spanish.
 - **Renames happen in place.** If you copy files into `data/inbox`, or mount a real folder over it, those files are renamed, and *Limpiar lote* deletes them. Only uploads through the browser are copies.
-- **Tested platforms.** The app was run on Windows and in the Docker image (Debian). macOS has not been tested.
+- **Tested platforms.** The app was run on Windows, on Debian (a clean `python:3.12-slim` container) and in the Docker image. macOS has not been tested.
 
 ## License
 
