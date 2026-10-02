@@ -34,7 +34,7 @@ def test_unique_target_adds_suffix(tmp_path: Path):
         ('Escrituras Junio/S-0001.pdf', 'Escrituras Junio/S-0001.pdf'),
         ('sub\\carpeta\\acta.pdf', 'sub/carpeta/acta.pdf'),
         ('../../../etc/salida.pdf', 'etc/salida.pdf'),
-        ('C:/Users/Jesus/Escritorio/acta.pdf', 'Users/Jesus/Escritorio/acta.pdf'),
+        ('C:/Users/usuario/Escritorio/acta.pdf', 'Users/usuario/Escritorio/acta.pdf'),
         ('  ACTA FINAL .PDF ', 'ACTA FINAL .PDF'),
     ],
 )
@@ -53,7 +53,7 @@ def test_safe_upload_relative_path_keeps_the_extension_on_very_long_names():
 
 
 def test_sanitize_folder_name_collapses_paths_to_a_single_level():
-    assert sanitize_folder_name('C:/Users/Jesus/Escrituras: Junio') == 'Escrituras Junio'
+    assert sanitize_folder_name('C:/Users/usuario/Escrituras: Junio') == 'Escrituras Junio'
     assert sanitize_folder_name('../..') == ''
 
 
