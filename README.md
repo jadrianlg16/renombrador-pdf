@@ -4,7 +4,7 @@
 
 Batch-rename scanned PDFs: mark where the name is, let OCR read it, and approve every name before a file changes.
 
-Renombrador PDF (Spanish for "PDF renamer") is a local web app for offices that receive stacks of scanned documents with names like `scan_0001.pdf` and need each file named after the person in it. You draw a box around the name on the page. The app runs Tesseract on that region only and proposes a filename. Nothing is renamed until a person has compared the proposal with the crop and approved it. The interface is in Spanish because it was built for a Spanish-speaking office; [README.es.md](README.es.md) is the user guide.
+Renombrador PDF (Spanish for "PDF renamer") is a local web app for offices that receive stacks of scanned documents with names like `scan_0001.pdf` and need each file named after the person in it. You draw a box around the name, the app runs Tesseract on that region only and proposes a filename, and nothing is renamed until a person has compared the proposal with the crop and approved it. The interface is in Spanish because it was built for a Spanish-speaking office; [README.es.md](README.es.md) is the user guide.
 
 ![The app marking a two-line name on a PDF page, reading it with OCR, and renaming the file after approval](docs/demo.gif)
 
@@ -30,8 +30,7 @@ There is no hosted demo: this is a local tool that reads and renames files on yo
 - **Folder upload from the browser.** Use the folder picker, pick loose PDFs, or drag a folder onto the window. Subfolders are kept. If a batch name is already taken, the new one gets ` (2)`. You can also copy PDFs into `data/inbox` and press *Actualizar carpeta* (refresh folder).
 - **OCR on marked regions only.** Draw one or more boxes. One box can cover a name that wraps onto several lines, and several boxes, even on different pages, are joined in order 1, 2, 3.
 - **Several readings per box.** Each box goes through five image preprocessing variants, each read in two Tesseract page-segmentation modes, plus a word-by-word pass that rebuilds spacing from the gaps in the ink. The best reading is proposed. With a single box, the other distinct readings are listed too (up to eight entries), and a click swaps one in.
-- **Review flag.** A result is marked for review when confidence is below 60, when it contains stray punctuation, or when the top readings disagree, even if confidence is high.
-- **Crop preview.** The original crop and a contrast-enhanced version sit next to the editable name, so you can check it letter by letter.
+- **Review aids.** The original crop and a contrast-enhanced version sit next to the editable name for a letter-by-letter check. A result is flagged for review when confidence is below 60, when it contains stray punctuation, or when the top readings disagree, even if confidence is high.
 - **Safe renames.** Accents are kept, characters Windows rejects are replaced, and reserved names such as `CON` or `LPT1` get a suffix. An existing file is never overwritten: ` (2)`, ` (3)` is appended instead. Only the file name changes; the PDF's content is not touched.
 - **Skip, undo and history.** You can skip a hard document. Undo walks renames back newest-first and refuses if the old name has since been taken. Every rename, skip and undo is logged in SQLite.
 - **ZIP export** for one batch or for everything, with either the approved files only or all files. A one-batch ZIP has the files at its root; a full ZIP keeps one folder per batch.
