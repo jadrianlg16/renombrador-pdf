@@ -66,7 +66,7 @@ flowchart LR
 - **Regions instead of full-page OCR.** The operator already knows where the name is. Reading a small crop at high resolution is quick and can't pick the wrong name from a page full of names.
 - **The files are the source of truth.** On startup, and whenever you press *Actualizar carpeta*, the inbox is rescanned: new PDFs are added, vanished ones are marked missing, and returning ones are restored.
 - **Uploads are copies.** Uploaded files are copied into `data/inbox/<batch>`, and renames happen there, so the originals on your disk are left alone.
-- **The container runs unprivileged.** `docker-entrypoint.sh` starts as root only to hand `/app/data` to the `app` user (uid 10001), which also converts a volume written by an older image that ran as root, and then drops privileges with `setpriv`. A host folder owned by a regular user is left alone and the server runs as that user instead.
+- **The container runs unprivileged.** `docker-entrypoint.sh` starts as root only to fix ownership, then drops privileges with `setpriv`. The server runs as whoever owns `/app/data`: the `app` user (uid 10001) for a named volume, including one written by an older image that ran as root, or your own user when you bind-mount a folder you own on Linux. Files inside that belong to someone else are handed to that user. If the filesystem refuses `chown`, the entrypoint logs a warning and runs the server as root, as older images did.
 - **Typed, documented code.** The `app/` package has type annotations on every parameter and a docstring on every public function, and ruff enforces lint, formatting and the docstrings.
 
 ### Project structure
