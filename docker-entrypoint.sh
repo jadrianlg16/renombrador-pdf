@@ -15,10 +15,8 @@ if [ "$(id -u)" != "0" ]; then
     exec "$@"
 fi
 
-mkdir -p "$data_dir/inbox" "$data_dir/state"
-
 if [ "$(stat -c %u "$data_dir")" = "0" ]; then
-    chown app:app "$data_dir" 2>/dev/null || true
+    chown -h app:app "$data_dir" 2>/dev/null || true
 fi
 run_uid="$(stat -c %u "$data_dir")"
 run_gid="$(stat -c %g "$data_dir")"
@@ -29,6 +27,12 @@ if [ "$run_uid" = "0" ]; then
     exec "$@"
 fi
 
-find "$data_dir" \( ! -user "$run_uid" -o ! -group "$run_gid" \) -exec chown "$run_uid:$run_gid" {} +
+# This runs as root over files the app user controls, so it never follows a symlink: links
+# are skipped (! -type l), chown -h would only touch a link itself, and -xdev keeps the walk
+# on this volume. Otherwise a link in the inbox could hand this script, or /etc, to the app
+# user.
+find "$data_dir" -xdev ! -type l \( ! -user "$run_uid" -o ! -group "$run_gid" \) \
+    -exec chown -h "$run_uid:$run_gid" {} +
 
-exec setpriv --reuid="$run_uid" --regid="$run_gid" --clear-groups -- "$@"
+# --no-new-privs: nothing the server starts can gain privileges through a setuid binary.
+exec setpriv --reuid="$run_uid" --regid="$run_gid" --clear-groups --no-new-privs -- "$@"
