@@ -132,7 +132,7 @@ Variables de entorno:
 | `OCR_LANGUAGES` | `spa+eng` | Idiomas de Tesseract |
 | `TESSERACT_CMD` | autodetección | Ruta al ejecutable de Tesseract |
 
-El límite por archivo subido es de 300 MB: el navegador deja fuera los archivos más grandes y los reporta como rechazados, y el servidor rechaza una petición más grande antes de recibirla. El navegador envía la carpeta en tandas de hasta 25 archivos o 40 MB, para que un lote grande no dependa de una sola petición.
+El límite por archivo subido es de 300 MB: el navegador deja fuera los archivos más grandes y los reporta como rechazados, y el servidor corta una petición más grande sin esperar a recibirla completa. El navegador envía la carpeta en tandas de hasta 25 archivos o 40 MB, para que un lote grande no dependa de una sola petición.
 
 ## Seguridad y recuperación
 
