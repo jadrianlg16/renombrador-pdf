@@ -1,10 +1,10 @@
 from pathlib import Path
-import fitz
+import pymupdf
 
 output = Path(__file__).resolve().parent / 'data' / 'inbox' / 'demo_nombre_dos_lineas.pdf'
 output.parent.mkdir(parents=True, exist_ok=True)
 
-document = fitz.open()
+document = pymupdf.open()
 page = document.new_page(width=612, height=792)
 page.insert_text((72, 90), 'ESCRITURA DE PRUEBA', fontsize=16)
 page.insert_text((72, 170), 'ACREDITADO:', fontsize=11)

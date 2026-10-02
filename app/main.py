@@ -3,10 +3,12 @@ from __future__ import annotations
 import shutil
 import tempfile
 import zipfile
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 
-import fitz
+import pymupdf
 import pytesseract
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
@@ -32,13 +34,17 @@ UPLOAD_CHUNK_BYTES = 1024 * 1024
 
 settings = get_settings()
 database = Database(settings)
-app = FastAPI(title="Renombrador PDF", version=APP_VERSION)
-app.mount("/static", StaticFiles(directory=settings.base_dir / "app" / "static"), name="static")
 
 
-@app.on_event("startup")
-def startup() -> None:
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Rescan the inbox on startup so files copied in while the app was stopped show up."""
     database.sync_documents()
+    yield
+
+
+app = FastAPI(title="Renombrador PDF", version=APP_VERSION, lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=settings.base_dir / "app" / "static"), name="static")
 
 
 def _get_document_or_404(document_id: str) -> dict:
@@ -102,7 +108,7 @@ def get_document(document_id: str) -> dict:
     document = _get_document_or_404(document_id)
     path = _document_path(document)
     try:
-        with fitz.open(path) as pdf:
+        with pymupdf.open(path) as pdf:
             page_count = pdf.page_count
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"No se pudo abrir el PDF: {exc}") from exc

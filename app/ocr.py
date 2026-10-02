@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import cv2
-import fitz
+import pymupdf
 import numpy as np
 import pytesseract
 from PIL import Image
@@ -58,7 +58,7 @@ def _encode_png(image: np.ndarray) -> str:
 
 
 def render_page(pdf_path: str, page_number: int, dpi: int) -> tuple[bytes, int]:
-    with fitz.open(pdf_path) as document:
+    with pymupdf.open(pdf_path) as document:
         if page_number < 1 or page_number > document.page_count:
             raise ValueError("Pagina fuera de rango")
         page = document.load_page(page_number - 1)
@@ -72,7 +72,7 @@ def render_crop(
     selection: dict[str, Any],
     dpi: int,
 ) -> np.ndarray:
-    with fitz.open(pdf_path) as document:
+    with pymupdf.open(pdf_path) as document:
         if page_number < 1 or page_number > document.page_count:
             raise ValueError("Pagina fuera de rango")
         page = document.load_page(page_number - 1)
@@ -91,7 +91,7 @@ def render_crop(
         x1 = min(1.0, x + width + pad_x)
         y1 = min(1.0, y + height + pad_y)
 
-        clip = fitz.Rect(
+        clip = pymupdf.Rect(
             page_rect.x0 + x0 * page_rect.width,
             page_rect.y0 + y0 * page_rect.height,
             page_rect.x0 + x1 * page_rect.width,
