@@ -30,7 +30,7 @@ known-first-party = ["app", "launcher", "helpers"]
 testpaths = ["tests"]
 pythonpath = ["."]
 filterwarnings = [
-    # Newer Starlette releases suggest the httpx2 fork for TestClient; httpx still works
-    # with every version requirements.txt allows, so it stays the documented dependency.
+    # Starlette 1.x suggests the httpx2 fork for TestClient but still supports httpx,
+    # which stays the documented test dependency.
     "ignore:Using `httpx` with `starlette.testclient` is deprecated",
 ]
