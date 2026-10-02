@@ -1,11 +1,11 @@
-"""ASGI middleware that guards the API: allowed hosts, same-origin writes, body limits."""
+"""ASGI middleware: allowed hosts, cross-site requests, body limits, security headers."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from urllib.parse import urlsplit
 
-from starlette.datastructures import Headers
+from starlette.datastructures import Headers, MutableHeaders
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -14,6 +14,12 @@ SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 MEBIBYTE = 1024 * 1024
 DEFAULT_ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 OTHER_SITE = frozenset({"cross-site", "same-site"})
+# Only the app's own scripts, styles and images, plus the data: URLs of the OCR crops; no
+# plugins, no <base> rewriting, and no framing by any other page.
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; "
+    "form-action 'self'; frame-ancestors 'none'"
+)
 
 
 def parse_allowed_hosts(extra: str | None) -> frozenset[str]:
@@ -150,3 +156,33 @@ class BodySizeLimitMiddleware:
             return message
 
         await self.app(scope, limited_receive, send)
+
+
+class SecurityHeadersMiddleware:
+    """Add browser hardening headers to every response.
+
+    Every response gets ``nosniff`` and a same-origin referrer policy. HTML pages also get
+    the Content-Security-Policy above and ``X-Frame-Options: DENY`` for older browsers, so
+    no other site can show the UI in a frame and trick the operator into clicking it.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Pass the request on and add the headers to the response as it starts."""
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                headers["X-Content-Type-Options"] = "nosniff"
+                headers["Referrer-Policy"] = "same-origin"
+                if headers.get("content-type", "").startswith("text/html"):
+                    headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+                    headers["X-Frame-Options"] = "DENY"
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)

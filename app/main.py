@@ -29,7 +29,11 @@ from .naming import (
     unique_target,
 )
 from .ocr import recognize_selections, render_page
-from .security import BodySizeLimitMiddleware, RequestGuardMiddleware
+from .security import (
+    BodySizeLimitMiddleware,
+    RequestGuardMiddleware,
+    SecurityHeadersMiddleware,
+)
 
 APP_VERSION = "1.3.0"
 # Cap on one upload request. The browser sends one file per request once a file is
@@ -60,6 +64,8 @@ app.add_middleware(
 # Added last so it runs first: a request for another host or from another site is
 # refused before its body is read.
 app.add_middleware(RequestGuardMiddleware, allowed_hosts=settings.allowed_hosts)
+# Outermost, so the guards' own error responses get the headers too.
+app.add_middleware(SecurityHeadersMiddleware)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
