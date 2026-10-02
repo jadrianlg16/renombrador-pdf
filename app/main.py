@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 import tempfile
 import zipfile
@@ -42,6 +43,9 @@ MAX_UPLOAD_BYTES = 300 * 1024 * 1024
 # Every other request carries a small JSON body (or none).
 MAX_REQUEST_BYTES = 1024 * 1024
 UPLOAD_CHUNK_BYTES = 1024 * 1024
+
+# Error details (paths, library messages) go to the server log, never into responses.
+logger = logging.getLogger("renombrador")
 
 settings = get_settings()
 database = Database(settings)
@@ -103,7 +107,7 @@ def favicon() -> FileResponse:
 
 @app.get("/api/health")
 def health() -> dict:
-    """Report the app identity, inbox and Tesseract status.
+    """Report the app identity and Tesseract status, without any local path.
 
     The launcher and stop_windows.bat use ``app_id`` to tell this app apart from other
     programs listening on the same ports.
@@ -118,7 +122,6 @@ def health() -> dict:
         "ok": True,
         "app_id": "renombrador-pdf",
         "version": APP_VERSION,
-        "input_dir": str(settings.input_dir),
         "tesseract_ready": tesseract_ready,
         "ocr_languages": settings.ocr_languages,
         "available_languages": languages,
@@ -156,7 +159,8 @@ def get_document(document_id: str) -> dict:
         with pymupdf.open(path) as pdf:
             page_count = pdf.page_count
     except Exception as exc:
-        raise HTTPException(status_code=422, detail=f"No se pudo abrir el PDF: {exc}") from exc
+        logger.warning("Could not open %s: %s", document["current_relative_path"], exc)
+        raise HTTPException(status_code=422, detail="No se pudo abrir el PDF.") from exc
     if document.get("page_count") != page_count:
         database.update_page_count(document_id, page_count)
         document["page_count"] = page_count
@@ -186,7 +190,8 @@ def get_document_page(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=422, detail=f"No se pudo renderizar el PDF: {exc}") from exc
+        logger.warning("Could not render %s: %s", document["current_relative_path"], exc)
+        raise HTTPException(status_code=422, detail="No se pudo mostrar la página.") from exc
     if document.get("page_count") != page_count:
         database.update_page_count(document_id, page_count)
     return Response(content=image, media_type="image/png", headers={"Cache-Control": "no-store"})
@@ -208,12 +213,14 @@ def ocr_document(document_id: str, request: OCRRequest) -> dict:
             detail="Tesseract no está instalado o no fue encontrado. Configura TESSERACT_CMD.",
         ) from exc
     except pytesseract.TesseractError as exc:
+        logger.warning("Tesseract failed on %s: %s", document["current_relative_path"], exc)
         raise HTTPException(
             status_code=503,
-            detail=f"Tesseract no pudo ejecutar el OCR: {exc}",
+            detail="Tesseract no pudo leer la selección. Revisa que tenga el idioma instalado.",
         ) from exc
     except Exception as exc:
-        raise HTTPException(status_code=422, detail=f"Falló el OCR: {exc}") from exc
+        logger.exception("OCR failed on %s", document["current_relative_path"])
+        raise HTTPException(status_code=422, detail="Falló el OCR de la selección.") from exc
 
     database.save_ocr(
         document_id,
@@ -239,7 +246,9 @@ def approve_document(document_id: str, request: ApproveRequest) -> dict:
         try:
             source.rename(target)
         except OSError as exc:
-            raise HTTPException(status_code=409, detail=f"No se pudo renombrar: {exc}") from exc
+            logger.warning("Rename failed: %s", exc)
+            detail = "No se pudo renombrar. ¿Está abierto en otro programa?"
+            raise HTTPException(status_code=409, detail=detail) from exc
 
     before_relative = source.relative_to(settings.input_dir).as_posix()
     after_relative = target.relative_to(settings.input_dir).as_posix()
@@ -290,7 +299,9 @@ def undo_last() -> dict:
     try:
         current.rename(original)
     except OSError as exc:
-        raise HTTPException(status_code=409, detail=f"No se pudo deshacer: {exc}") from exc
+        logger.warning("Undo failed: %s", exc)
+        detail = "No se pudo deshacer. ¿Está abierto en otro programa?"
+        raise HTTPException(status_code=409, detail=detail) from exc
     restored_relative = original.relative_to(settings.input_dir).as_posix()
     database.complete_undo(action["id"], action["document_id"], restored_relative)
     return {"ok": True, "restored": restored_relative, "document_id": action["document_id"]}
@@ -366,7 +377,8 @@ async def upload_documents(
         try:
             relative, reason = await _store_upload(upload, batch_dir)
         except OSError as exc:
-            relative, reason = None, f"No se pudo guardar: {exc}"
+            logger.warning("Upload of %r failed: %s", upload.filename, exc)
+            relative, reason = None, "No se pudo guardar en el disco"
         finally:
             await upload.close()
         if relative:
@@ -452,9 +464,10 @@ def delete_batch(batch_name: str) -> dict:
         try:
             shutil.rmtree(directory)
         except OSError as exc:
+            logger.warning("Deleting batch %s failed: %s", name, exc)
             raise HTTPException(
                 status_code=409,
-                detail=f"No se pudo borrar la carpeta del lote: {exc}",
+                detail="No se pudo borrar la carpeta del lote. ¿Hay un archivo abierto?",
             ) from exc
 
     removed_documents = database.delete_batch(name)

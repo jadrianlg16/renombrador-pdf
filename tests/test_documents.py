@@ -163,3 +163,40 @@ def test_ocr_without_tesseract_answers_503(client, monkeypatch: pytest.MonkeyPat
     )
     assert response.status_code == 503
     assert "TESSERACT_CMD" in response.json()["detail"]
+
+
+def test_health_does_not_reveal_local_paths(client):
+    test_client, module = client
+    health = test_client.get("/api/health").json()
+    assert health["app_id"] == "renombrador-pdf"
+    assert "input_dir" not in health
+    assert str(module.settings.input_dir) not in str(health)
+
+
+def test_a_broken_pdf_gets_a_generic_error(client):
+    test_client, module = client
+    upload(test_client, ["S-0001.pdf"], folder="Lote")
+    document_id = _documents(test_client)[0]["id"]
+    (module.settings.input_dir / "Lote" / "S-0001.pdf").write_bytes(b"%PDF-1.4 truncated")
+
+    for path in (f"/api/documents/{document_id}", f"/api/documents/{document_id}/page/1"):
+        response = test_client.get(path)
+        assert response.status_code == 422
+        detail = response.json()["detail"]
+        assert "S-0001" not in detail and str(module.settings.input_dir) not in detail
+
+
+def test_ocr_failures_are_reported_without_internals(client, monkeypatch: pytest.MonkeyPatch):
+    test_client, _ = client
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("C:/secret/path/tesseract crashed")
+
+    monkeypatch.setattr("app.ocr.pytesseract.image_to_data", broken)
+    upload(test_client, ["S-0001.pdf"], folder="Lote")
+    document_id = _documents(test_client)[0]["id"]
+    response = test_client.post(
+        f"/api/documents/{document_id}/ocr", json={"selections": [SELECTION]}
+    )
+    assert response.status_code == 422
+    assert "secret" not in response.json()["detail"]

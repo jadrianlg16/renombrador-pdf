@@ -16,7 +16,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
  "  $proc = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $ownerPid) -ErrorAction SilentlyContinue;" ^
  "  $esPython = $proc -and ($proc.Name -match '^python(w|[0-9.]+)?\.exe$') -and ($proc.CommandLine -match 'app\.main:app');" ^
  "  if (-not $esPython) { $nombre = if ($proc) { $proc.Name } else { 'desconocido' }; Write-Host ('Omitido: el puerto ' + $port + ' lo atiende ' + $nombre + ' (PID ' + $ownerPid + '), no el Python del Renombrador. Si es el contenedor de Docker, detenlo con docker stop.'); return };" ^
- "  Stop-Process -Id $ownerPid -Force; Write-Host ('Cerrado: puerto ' + $port + ' (PID ' + $ownerPid + ') -> ' + $h.input_dir); $found = $true" ^
+ "  Stop-Process -Id $ownerPid -Force; Write-Host ('Cerrado: puerto ' + $port + ' (PID ' + $ownerPid + ')'); $found = $true" ^
  "};" ^
  "if (-not $found) { Write-Host 'No hay ninguna instancia del Renombrador PDF corriendo.' }"
 echo.
