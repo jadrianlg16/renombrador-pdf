@@ -179,8 +179,7 @@ def _run_tesseract(image: np.ndarray, languages: str, psm: int, variant: str) ->
             confidences.append(confidence)
 
     ordered_lines = [
-        " ".join(text for _, text in sorted(line_words))
-        for _, line_words in sorted(lines.items())
+        " ".join(text for _, text in sorted(line_words)) for _, line_words in sorted(lines.items())
     ]
     text = clean_ocr_text("\n".join(ordered_lines) if ordered_lines else " ".join(words))
     confidence = round(sum(confidences) / len(confidences), 1) if confidences else 0.0
@@ -378,8 +377,7 @@ def _candidates_disagree(ranked: list[OCRCandidate]) -> bool:
     if not best_text:
         return True
     comparable = [
-        item for item in ranked[1:5]
-        if item.confidence >= max(45.0, best.confidence - 18.0)
+        item for item in ranked[1:5] if item.confidence >= max(45.0, best.confidence - 18.0)
     ]
     for item in comparable:
         other = re.sub(r"[^\w]+", "", item.text, flags=re.UNICODE).casefold()
