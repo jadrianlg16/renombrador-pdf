@@ -4,7 +4,6 @@ import re
 import unicodedata
 from pathlib import Path
 
-
 WINDOWS_RESERVED = {
     "CON", "PRN", "AUX", "NUL",
     *(f"COM{number}" for number in range(1, 10)),
@@ -95,6 +94,7 @@ def unique_target(directory: Path, filename: str, current_path: Path | None = No
     counter = 2
     while True:
         candidate = directory / f"{stem} ({counter}){suffix}"
-        if not candidate.exists() or (current_path and candidate.resolve() == current_path.resolve()):
+        is_current = current_path is not None and candidate.resolve() == current_path.resolve()
+        if not candidate.exists() or is_current:
             return candidate
         counter += 1

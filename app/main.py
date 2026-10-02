@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path, PurePosixPath
+from typing import Annotated
 
 import pymupdf
 import pytesseract
@@ -27,7 +28,6 @@ from .naming import (
 )
 from .ocr import recognize_selections, render_page
 from .security import BodySizeLimitMiddleware, SameOriginMiddleware
-
 
 APP_VERSION = "1.2.0"
 # Cap on one upload request. The browser sends one file per request once a file is
@@ -144,14 +144,16 @@ def get_document(document_id: str) -> dict:
 @app.get("/api/documents/{document_id}/file")
 def get_document_file(document_id: str) -> FileResponse:
     document = _get_document_or_404(document_id)
-    return FileResponse(_document_path(document), media_type="application/pdf", filename=document["current_name"])
+    return FileResponse(
+        _document_path(document), media_type="application/pdf", filename=document["current_name"]
+    )
 
 
 @app.get("/api/documents/{document_id}/page/{page_number}")
 def get_document_page(
     document_id: str,
     page_number: int,
-    dpi: int = Query(default=settings.render_dpi, ge=72, le=250),
+    dpi: Annotated[int, Query(ge=72, le=250)] = settings.render_dpi,
 ) -> Response:
     document = _get_document_or_404(document_id)
     path = _document_path(document)
@@ -263,7 +265,7 @@ def undo_last() -> dict:
 
 
 @app.get("/api/history")
-def history(limit: int = Query(default=100, ge=1, le=1000)) -> dict:
+def history(limit: Annotated[int, Query(ge=1, le=1000)] = 100) -> dict:
     return {"actions": database.history(limit)}
 
 
@@ -315,9 +317,9 @@ async def _store_upload(upload: UploadFile, batch_dir: Path) -> tuple[str | None
 
 @app.post("/api/upload")
 async def upload_documents(
-    files: list[UploadFile] = File(...),
-    folder: str | None = Form(default=None),
-    batch: str | None = Form(default=None),
+    files: Annotated[list[UploadFile], File()],
+    folder: Annotated[str | None, Form()] = None,
+    batch: Annotated[str | None, Form()] = None,
 ) -> dict:
     if not files:
         raise HTTPException(status_code=400, detail="No se recibió ningún archivo")
@@ -335,7 +337,8 @@ async def upload_documents(
         if relative:
             saved.append(relative)
         else:
-            rejected.append({"name": upload.filename or "(sin nombre)", "reason": reason or "Rechazado"})
+            name = upload.filename or "(sin nombre)"
+            rejected.append({"name": name, "reason": reason or "Rechazado"})
 
     batch_name = batch_dir.relative_to(settings.input_dir).as_posix()
     if saved:
@@ -424,8 +427,8 @@ def delete_batch(batch_name: str) -> dict:
 
 @app.get("/api/export")
 def export_zip(
-    scope: str = Query(default="approved", pattern="^(approved|all)$"),
-    folder: str | None = Query(default=None),
+    scope: Annotated[str, Query(pattern="^(approved|all)$")] = "approved",
+    folder: str | None = None,
 ) -> FileResponse:
     entries: list[tuple[Path, str]] = []
     exported_batches: set[str] = set()
@@ -462,18 +465,20 @@ def export_zip(
     handle, temporary_path = tempfile.mkstemp(suffix=".zip", dir=export_dir)
     archive_path = Path(temporary_path)
     try:
-        with open(handle, "wb") as stream:
-            with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as archive:
-                used: set[str] = set()
-                for path, arcname in entries:
-                    unique_name = arcname
-                    counter = 2
-                    while unique_name.lower() in used:
-                        stem = PurePosixPath(arcname)
-                        unique_name = f"{stem.with_suffix('')} ({counter}){stem.suffix}"
-                        counter += 1
-                    used.add(unique_name.lower())
-                    archive.write(path, unique_name)
+        with (
+            open(handle, "wb") as stream,
+            zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as archive,
+        ):
+            used: set[str] = set()
+            for path, arcname in entries:
+                unique_name = arcname
+                counter = 2
+                while unique_name.lower() in used:
+                    stem = PurePosixPath(arcname)
+                    unique_name = f"{stem.with_suffix('')} ({counter}){stem.suffix}"
+                    counter += 1
+                used.add(unique_name.lower())
+                archive.write(path, unique_name)
     except Exception:
         archive_path.unlink(missing_ok=True)
         raise

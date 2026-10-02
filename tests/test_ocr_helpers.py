@@ -1,17 +1,16 @@
-from app.ocr import clean_ocr_text, join_name_parts
+import cv2
+import numpy as np
+
+from app.ocr import _visual_word_boxes, clean_ocr_text, join_name_parts
 
 
 def test_clean_text_preserves_lines():
-    assert clean_ocr_text('  MARÍA   DEL CARMEN\n  DE LA GARZA  ') == 'MARÍA DEL CARMEN\nDE LA GARZA'
+    cleaned = clean_ocr_text('  MARÍA   DEL CARMEN\n  DE LA GARZA  ')
+    assert cleaned == 'MARÍA DEL CARMEN\nDE LA GARZA'
 
 
 def test_join_name_parts_flattens_multiple_lines_and_regions():
     assert join_name_parts(['MARÍA DEL\nCARMEN', 'DE LA GARZA']) == 'MARÍA DEL CARMEN DE LA GARZA'
-
-import cv2
-import numpy as np
-
-from app.ocr import _visual_word_boxes
 
 
 def test_clean_text_removes_punctuation_inserted_between_letters():

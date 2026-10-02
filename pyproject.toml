@@ -1,0 +1,28 @@
+# Tool settings only: the app runs from the source tree and is not packaged.
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # import order
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "launcher", "helpers"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = [
+    # Newer Starlette releases suggest the httpx2 fork for TestClient; httpx still works
+    # with every version requirements.txt allows, so it stays the documented dependency.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]

@@ -4,13 +4,13 @@ import json
 import sqlite3
 import threading
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from .config import Settings
-
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -60,7 +60,7 @@ CREATE INDEX IF NOT EXISTS idx_actions_document ON actions(document_id);
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 class Database:
@@ -101,7 +101,8 @@ class Database:
             disk_paths: set[str] = set()
             adopted: set[str] = set()
 
-            for path in sorted(self.settings.input_dir.rglob("*.pdf"), key=lambda p: str(p).lower()):
+            pdfs = sorted(self.settings.input_dir.rglob("*.pdf"), key=lambda p: str(p).lower())
+            for path in pdfs:
                 if not path.is_file():
                     continue
                 relative = path.relative_to(self.settings.input_dir).as_posix()

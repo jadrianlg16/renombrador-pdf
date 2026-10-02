@@ -8,6 +8,10 @@ import pytest
 from helpers import MINIMAL_PDF, upload
 
 
+def _batch(test_client, name: str) -> dict:
+    return next(b for b in test_client.get("/api/batches").json()["batches"] if b["name"] == name)
+
+
 def test_upload_creates_batch_and_registers_documents(client):
     test_client, module = client
     response = upload(test_client, ["a.pdf", "sub/b.pdf"], folder="Escrituras 2026")
@@ -172,11 +176,11 @@ def test_batches_endpoint_tracks_export_state(client):
     documents = test_client.get("/api/documents").json()["documents"]
     test_client.post(f"/api/documents/{documents[0]['id']}/approve", json={"name": "ANA LOPEZ"})
 
-    before = next(b for b in test_client.get("/api/batches").json()["batches"] if b["name"] == "Lote")
+    before = _batch(test_client, "Lote")
     assert before["approved"] == 1 and before["exported_at"] is None and before["deletable"] is True
 
     test_client.get("/api/export", params={"scope": "approved", "folder": "Lote"})
-    after = next(b for b in test_client.get("/api/batches").json()["batches"] if b["name"] == "Lote")
+    after = _batch(test_client, "Lote")
     assert after["exported_at"] is not None
 
 

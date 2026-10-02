@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import cv2
-import pymupdf
 import numpy as np
+import pymupdf
 import pytesseract
 from PIL import Image
 from pytesseract import Output

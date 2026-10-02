@@ -13,7 +13,6 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_START_PORT = 8765

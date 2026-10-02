@@ -13,7 +13,8 @@ FOREIGN_ORIGIN = {"Origin": "https://evil.example"}
 def test_same_origin_writes_are_accepted(client):
     test_client, _ = client
     assert test_client.post("/api/sync", headers=SAME_ORIGIN).status_code == 200
-    response = test_client.post("/api/sync", headers={**SAME_ORIGIN, "Sec-Fetch-Site": "same-origin"})
+    with_fetch_metadata = {**SAME_ORIGIN, "Sec-Fetch-Site": "same-origin"}
+    response = test_client.post("/api/sync", headers=with_fetch_metadata)
     assert response.status_code == 200
 
 
