@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytesseract
 
+from .security import parse_allowed_hosts
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -21,6 +23,7 @@ class Settings:
     render_dpi: int
     ocr_dpi: int
     ocr_languages: str
+    allowed_hosts: frozenset[str]
 
 
 def _resolve_path(value: str | None, default: Path) -> Path:
@@ -66,4 +69,5 @@ def get_settings() -> Settings:
         render_dpi=int(os.getenv("PDF_RENDER_DPI", "150")),
         ocr_dpi=int(os.getenv("PDF_OCR_DPI", "450")),
         ocr_languages=os.getenv("OCR_LANGUAGES", "spa+eng"),
+        allowed_hosts=parse_allowed_hosts(os.getenv("ALLOWED_HOSTS")),
     )

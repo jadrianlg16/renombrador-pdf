@@ -1,12 +1,12 @@
-"""Cross-site request rejection (CSRF) on the HTTP API."""
+"""Request guards: allowed host names (DNS rebinding) and cross-site rejection (CSRF)."""
 
 from __future__ import annotations
 
 import pytest
 
-from helpers import upload
+from helpers import open_app, upload
 
-SAME_ORIGIN = {"Origin": "http://testserver"}
+SAME_ORIGIN = {"Origin": "http://localhost"}
 FOREIGN_ORIGIN = {"Origin": "https://evil.example"}
 
 
@@ -60,7 +60,7 @@ def test_a_foreign_origin_cannot_approve_or_upload(client):
     "headers",
     [
         {"Origin": "null"},
-        {"Origin": "http://testserver:8999"},
+        {"Origin": "http://localhost:8999"},
         {"Origin": "http://127.0.0.1"},
         {"Sec-Fetch-Site": "cross-site"},
         {"Sec-Fetch-Site": "same-site"},
@@ -82,3 +82,39 @@ def test_clients_that_send_no_origin_are_allowed(client):
 def test_reads_are_not_blocked_by_origin(client):
     test_client, _ = client
     assert test_client.get("/api/documents", headers=FOREIGN_ORIGIN).status_code == 200
+
+
+REBIND_HOST = "rebind.attacker.test:8765"
+
+
+@pytest.mark.parametrize(
+    ("method", "path"), [("GET", "/api/health"), ("GET", "/api/documents"), ("POST", "/api/sync")]
+)
+def test_a_rebound_host_name_is_refused(client, method: str, path: str):
+    # DNS rebinding: the attacker's page and the request both carry the attacker's domain.
+    test_client, _ = client
+    headers = {"Host": REBIND_HOST, "Origin": f"http://{REBIND_HOST}"}
+    response = test_client.request(method, path, headers=headers)
+    assert response.status_code == 400
+    assert "ALLOWED_HOSTS" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("host", ["localhost:8765", "127.0.0.1:8765", "[::1]:8765", "LOCALHOST"])
+def test_loopback_host_names_on_any_port_are_served(client, host: str):
+    test_client, _ = client
+    assert test_client.get("/api/config", headers={"Host": host}).status_code == 200
+
+
+def test_an_origin_on_another_allowed_host_is_still_cross_site(client):
+    test_client, _ = client
+    headers = {"Host": "localhost:8765", "Origin": "http://127.0.0.1:8765"}
+    assert test_client.post("/api/sync", headers=headers).status_code == 403
+
+
+def test_extra_host_names_come_from_allowed_hosts(app_env: pytest.MonkeyPatch):
+    app_env.setenv("ALLOWED_HOSTS", "renombrador.lan, 192.168.1.20")
+    with open_app() as (test_client, _):
+        lan = {"Host": "renombrador.lan:8765", "Origin": "http://renombrador.lan:8765"}
+        assert test_client.post("/api/sync", headers=lan).status_code == 200
+        assert test_client.get("/api/config", headers={"Host": "192.168.1.20"}).status_code == 200
+        assert test_client.get("/api/config", headers={"Host": REBIND_HOST}).status_code == 400

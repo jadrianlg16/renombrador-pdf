@@ -11,6 +11,9 @@ from types import ModuleType
 from fastapi.testclient import TestClient
 from httpx import Response
 
+# The app only answers to loopback host names, so the test client uses one.
+TEST_HOST = "localhost"
+
 # The smallest file PyMuPDF opens as a one-page, 200 x 200 pt PDF.
 MINIMAL_PDF = (
     b"%PDF-1.4\n"
@@ -28,7 +31,7 @@ def open_app() -> Iterator[tuple[TestClient, ModuleType]]:
 
     module = importlib.reload(main)
     try:
-        with TestClient(module.app) as test_client:
+        with TestClient(module.app, base_url=f"http://{TEST_HOST}") as test_client:
             yield test_client, module
     finally:
         importlib.reload(main)

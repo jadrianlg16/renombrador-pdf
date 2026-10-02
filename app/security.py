@@ -1,4 +1,4 @@
-"""ASGI middleware that guards the API: same-origin writes and request body limits."""
+"""ASGI middleware that guards the API: allowed hosts, same-origin writes, body limits."""
 
 from __future__ import annotations
 
@@ -12,48 +12,76 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 MEBIBYTE = 1024 * 1024
+DEFAULT_ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
-def is_cross_site(headers: Headers) -> bool:
+def parse_allowed_hosts(extra: str | None) -> frozenset[str]:
+    """Return the loopback host names plus the comma-separated names in ``extra``."""
+    names = {name.strip().strip("[]").lower() for name in (extra or "").split(",")}
+    return DEFAULT_ALLOWED_HOSTS | {name for name in names if name}
+
+
+def host_name(netloc: str) -> str:
+    """Return the lowercased host of ``host[:port]`` without IPv6 brackets; "" if invalid."""
+    try:
+        return urlsplit(f"//{netloc}").hostname or ""
+    except ValueError:
+        return ""
+
+
+def is_cross_site(headers: Headers, allowed_hosts: frozenset[str]) -> bool:
     """Tell whether a browser sent this request from a page on another origin.
 
     Browsers attach ``Origin`` to every request that is not a GET or HEAD, so when it
-    is present it must name the same host and port the request was sent to. Without
-    it, ``Sec-Fetch-Site`` is the fallback. A request with neither header comes from a
-    non-browser client such as curl or a script; a malicious web page cannot make the
-    browser send that, so it is allowed.
+    is present its host must be an allowed one and it must name the same host and port
+    the request was sent to. Without it, ``Sec-Fetch-Site`` is the fallback. A request
+    with neither header comes from a non-browser client such as curl or a script; a
+    malicious web page cannot make the browser send that, so it is allowed.
     """
     origin = headers.get("origin")
     if origin is not None:
-        if origin == "null":
+        try:
+            origin_netloc = urlsplit(origin).netloc.lower()
+        except ValueError:
             return True
-        return urlsplit(origin).netloc.lower() != headers.get("host", "").lower()
+        return (
+            host_name(origin_netloc) not in allowed_hosts
+            or origin_netloc != headers.get("host", "").lower()
+        )
     return headers.get("sec-fetch-site") in {"cross-site", "same-site"}
 
 
-class SameOriginMiddleware:
-    """Reject state-changing requests that a browser sent from another site (CSRF).
+class RequestGuardMiddleware:
+    """Refuse requests for an unknown host name (DNS rebinding) and cross-site writes (CSRF).
 
-    The app has no login, so a session token would protect nothing; what matters is
-    that a page on another site cannot make the operator's browser rename, skip or
-    delete files. Reads stay open because the browser already hides cross-origin
-    responses from the page that asked for them.
+    DNS rebinding points an attacker's domain at 127.0.0.1, so the browser treats the
+    app as part of the attacker's site and sends that domain in ``Host``. Only loopback
+    names and the ones listed in ALLOWED_HOSTS are served, so such a page gets 400 and
+    can neither read nor change anything. The app has no login, so a session token would
+    protect nothing; what matters is that no other site can make the operator's browser
+    rename, skip or delete files.
     """
 
-    def __init__(self, app: ASGIApp) -> None:
+    def __init__(self, app: ASGIApp, allowed_hosts: frozenset[str]) -> None:
         self.app = app
+        self.allowed_hosts = allowed_hosts
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        """Answer 403 to a cross-site write; pass everything else through."""
-        if (
-            scope["type"] == "http"
-            and scope["method"] not in SAFE_METHODS
-            and is_cross_site(Headers(scope=scope))
-        ):
-            response = JSONResponse(
-                {"detail": "Solicitud rechazada: viene de otro sitio web."}, status_code=403
+        """Answer 400 to an unknown Host and 403 to a cross-site write; pass the rest on."""
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        headers = Headers(scope=scope)
+        if host_name(headers.get("host", "")) not in self.allowed_hosts:
+            detail = (
+                "Nombre de host no permitido. Abre la aplicación en http://127.0.0.1 o "
+                "http://localhost, o agrega el nombre a ALLOWED_HOSTS."
             )
-            await response(scope, receive, send)
+            await JSONResponse({"detail": detail}, status_code=400)(scope, receive, send)
+            return
+        if scope["method"] not in SAFE_METHODS and is_cross_site(headers, self.allowed_hosts):
+            detail = "Solicitud rechazada: viene de otro sitio web."
+            await JSONResponse({"detail": detail}, status_code=403)(scope, receive, send)
             return
         await self.app(scope, receive, send)
 

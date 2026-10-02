@@ -29,7 +29,7 @@ from .naming import (
     unique_target,
 )
 from .ocr import recognize_selections, render_page
-from .security import BodySizeLimitMiddleware, SameOriginMiddleware
+from .security import BodySizeLimitMiddleware, RequestGuardMiddleware
 
 APP_VERSION = "1.3.0"
 # Cap on one upload request. The browser sends one file per request once a file is
@@ -57,8 +57,9 @@ app.add_middleware(
     limits={"/api/upload": MAX_UPLOAD_BYTES},
     default_limit=MAX_REQUEST_BYTES,
 )
-# Added last so it runs first: a cross-site request is refused before its body is read.
-app.add_middleware(SameOriginMiddleware)
+# Added last so it runs first: a request for another host or from another site is
+# refused before its body is read.
+app.add_middleware(RequestGuardMiddleware, allowed_hosts=settings.allowed_hosts)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
