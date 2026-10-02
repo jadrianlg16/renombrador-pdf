@@ -2,7 +2,7 @@ services:
   renombrador-pdf:
     build: .
     ports:
-      - "8765:8000"
+      - "127.0.0.1:8765:8000"
     volumes:
       - ./data:/app/data
     environment:
