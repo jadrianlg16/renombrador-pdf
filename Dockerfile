@@ -12,11 +12,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
+# The server runs as this user; docker-entrypoint.sh starts as root only to fix the
+# ownership of /app/data and then drops to it.
+RUN groupadd --gid 10001 app \
+    && useradd --uid 10001 --gid app --no-create-home --home-dir /nonexistent \
+        --shell /usr/sbin/nologin app
+
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
-RUN mkdir -p /app/data/inbox /app/data/state
+COPY --chmod=0755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN mkdir -p /app/data/inbox /app/data/state && chown -R app:app /app/data
 
 EXPOSE 8000
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
