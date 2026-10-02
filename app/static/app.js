@@ -548,13 +548,32 @@ async function confirmClearBatch() {
   }
 }
 
-function downloadExport() {
+async function refreshBatches() {
+  const payload = await request('/api/batches');
+  state.batches = payload.batches || [];
+  state.latestUpload = payload.latest_upload || null;
+  updateClearBatchControls();
+}
+
+async function downloadExport() {
   const { folder, scope, count } = exportSelection();
-  if (!count) return;
+  if (!count || state.busy) return;
   const params = new URLSearchParams({ scope });
   if (folder !== ALL_BATCHES) params.set('folder', folder);
+  try {
+    // Recorded with a POST, which only this page can send, before the download starts:
+    // it clears the "not downloaded yet" warning even if the download is cancelled.
+    await request('/api/export/record', {
+      method: 'POST',
+      body: JSON.stringify({ scope, folder: folder === ALL_BATCHES ? null : folder }),
+    });
+  } catch (error) {
+    showToast(error.message, 'error');
+    return;
+  }
   showToast(`Preparando el ZIP con ${count} ${count === 1 ? 'archivo' : 'archivos'}…`);
   window.location.assign(`/api/export?${params.toString()}`);
+  refreshBatches().catch(() => {});
 }
 
 function resetOcrPanels() {

@@ -181,9 +181,23 @@ def test_batches_endpoint_tracks_export_state(client):
     before = _batch(test_client, "Lote")
     assert before["approved"] == 1 and before["exported_at"] is None and before["deletable"] is True
 
+    # Downloading the ZIP changes nothing; the UI records the download with a POST.
     test_client.get("/api/export", params={"scope": "approved", "folder": "Lote"})
-    after = _batch(test_client, "Lote")
-    assert after["exported_at"] is not None
+    assert _batch(test_client, "Lote")["exported_at"] is None
+
+    recorded = test_client.post("/api/export/record", json={"scope": "approved", "folder": "Lote"})
+    assert recorded.json()["batches"] == ["Lote"]
+    assert _batch(test_client, "Lote")["exported_at"] is not None
+
+
+def test_recording_an_export_of_everything_marks_every_batch_in_it(client):
+    test_client, _ = client
+    upload(test_client, ["a.pdf"], folder="Lote A")
+    upload(test_client, ["b.pdf"], folder="Lote B")
+    recorded = test_client.post("/api/export/record", json={"scope": "all", "folder": None})
+    assert recorded.json()["batches"] == ["Lote A", "Lote B"]
+    empty = test_client.post("/api/export/record", json={"scope": "approved", "folder": None})
+    assert empty.status_code == 404
 
 
 def test_latest_upload_points_at_the_most_recent_batch(client):

@@ -118,3 +118,63 @@ def test_extra_host_names_come_from_allowed_hosts(app_env: pytest.MonkeyPatch):
         assert test_client.post("/api/sync", headers=lan).status_code == 200
         assert test_client.get("/api/config", headers={"Host": "192.168.1.20"}).status_code == 200
         assert test_client.get("/api/config", headers={"Host": REBIND_HOST}).status_code == 400
+
+
+# Fetch metadata a browser attaches to an <img> on another site.
+CROSS_SITE_IMAGE = {
+    "Sec-Fetch-Site": "cross-site",
+    "Sec-Fetch-Mode": "no-cors",
+    "Sec-Fetch-Dest": "image",
+}
+
+
+def test_another_site_cannot_mark_a_batch_as_exported(client):
+    test_client, _ = client
+    upload(test_client, ["a.pdf"], folder="Lote")
+
+    image = test_client.get("/api/export", params={"scope": "all"}, headers=CROSS_SITE_IMAGE)
+    assert image.status_code == 403
+    record = test_client.post(
+        "/api/export/record", json={"scope": "all", "folder": None}, headers=FOREIGN_ORIGIN
+    )
+    assert record.status_code == 403
+
+    batches = test_client.get("/api/batches").json()["batches"]
+    assert [batch["exported_at"] for batch in batches] == [None]
+
+
+@pytest.mark.parametrize(
+    "fetch",
+    [
+        CROSS_SITE_IMAGE,
+        {"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "cors", "Sec-Fetch-Dest": "empty"},
+        {"Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "no-cors", "Sec-Fetch-Dest": "image"},
+        {
+            "Sec-Fetch-Site": "cross-site",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Dest": "document",
+        },
+    ],
+)
+def test_other_sites_cannot_load_the_api(client, fetch: dict[str, str]):
+    test_client, _ = client
+    assert test_client.get("/api/documents", headers=fetch).status_code == 403
+
+
+def test_other_sites_can_open_the_page_but_not_frame_it(client):
+    # A launcher page on another port opens the app with a plain link: same-site, top level.
+    test_client, _ = client
+    link = {
+        "Sec-Fetch-Site": "same-site",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Dest": "document",
+    }
+    assert test_client.get("/", headers=link).status_code == 200
+    frame = {**link, "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Dest": "iframe"}
+    assert test_client.get("/", headers=frame).status_code == 403
+    own_page = {
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Dest": "empty",
+    }
+    assert test_client.get("/api/documents", headers=own_page).status_code == 200

@@ -13,6 +13,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 MEBIBYTE = 1024 * 1024
 DEFAULT_ALLOWED_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+OTHER_SITE = frozenset({"cross-site", "same-site"})
 
 
 def parse_allowed_hosts(extra: str | None) -> frozenset[str]:
@@ -48,18 +49,34 @@ def is_cross_site(headers: Headers, allowed_hosts: frozenset[str]) -> bool:
             host_name(origin_netloc) not in allowed_hosts
             or origin_netloc != headers.get("host", "").lower()
         )
-    return headers.get("sec-fetch-site") in {"cross-site", "same-site"}
+    return headers.get("sec-fetch-site") in OTHER_SITE
+
+
+def is_cross_site_read(path: str, headers: Headers) -> bool:
+    """Tell whether another site is loading or framing the app instead of opening it.
+
+    Browsers label every request with fetch metadata (``Sec-Fetch-*``). Another site
+    may link to the app's page, which is how a launcher page opens it, but it may not
+    load the API or put the app in a frame: an ``<img>`` pointing at /api/export, for
+    example, is refused. Requests without these headers are not browser subresources.
+    """
+    if headers.get("sec-fetch-site") not in OTHER_SITE:
+        return False
+    top_level_page = (
+        headers.get("sec-fetch-mode") == "navigate" and headers.get("sec-fetch-dest") == "document"
+    )
+    return not top_level_page or path.startswith("/api/")
 
 
 class RequestGuardMiddleware:
-    """Refuse requests for an unknown host name (DNS rebinding) and cross-site writes (CSRF).
+    """Refuse requests for an unknown host name (DNS rebinding) and from other sites (CSRF).
 
     DNS rebinding points an attacker's domain at 127.0.0.1, so the browser treats the
     app as part of the attacker's site and sends that domain in ``Host``. Only loopback
     names and the ones listed in ALLOWED_HOSTS are served, so such a page gets 400 and
     can neither read nor change anything. The app has no login, so a session token would
     protect nothing; what matters is that no other site can make the operator's browser
-    rename, skip or delete files.
+    rename, skip or delete files, or load the API in the background.
     """
 
     def __init__(self, app: ASGIApp, allowed_hosts: frozenset[str]) -> None:
@@ -67,7 +84,7 @@ class RequestGuardMiddleware:
         self.allowed_hosts = allowed_hosts
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        """Answer 400 to an unknown Host and 403 to a cross-site write; pass the rest on."""
+        """Answer 400 to an unknown Host and 403 to another site's request; pass the rest on."""
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
@@ -79,7 +96,11 @@ class RequestGuardMiddleware:
             )
             await JSONResponse({"detail": detail}, status_code=400)(scope, receive, send)
             return
-        if scope["method"] not in SAFE_METHODS and is_cross_site(headers, self.allowed_hosts):
+        if scope["method"] in SAFE_METHODS:
+            refused = is_cross_site_read(scope["path"], headers)
+        else:
+            refused = is_cross_site(headers, self.allowed_hosts)
+        if refused:
             detail = "Solicitud rechazada: viene de otro sitio web."
             await JSONResponse({"detail": detail}, status_code=403)(scope, receive, send)
             return

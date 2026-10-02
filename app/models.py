@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -43,3 +45,10 @@ class ApproveRequest(BaseModel):
     name: str = Field(min_length=1, max_length=220)
     ocr_text: str | None = None
     selections: list[Selection] = Field(default_factory=list, max_length=20)
+
+
+class ExportRecord(BaseModel):
+    """The ZIP the UI is about to download: ``folder`` None means every batch, "" the root."""
+
+    scope: Literal["approved", "all"] = "approved"
+    folder: str | None = Field(default=None, max_length=255)

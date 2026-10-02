@@ -20,7 +20,7 @@ from starlette.background import BackgroundTask
 
 from .config import get_settings
 from .database import Database
-from .models import ApproveRequest, OCRRequest
+from .models import ApproveRequest, ExportRecord, OCRRequest
 from .naming import (
     safe_upload_relative_path,
     sanitize_folder_name,
@@ -460,12 +460,8 @@ def delete_batch(batch_name: str) -> dict:
     }
 
 
-@app.get("/api/export")
-def export_zip(
-    scope: Annotated[str, Query(pattern="^(approved|all)$")] = "approved",
-    folder: str | None = None,
-) -> FileResponse:
-    """Build a ZIP of one batch or all of them, with approved files only or every file."""
+def _export_entries(scope: str, folder: str | None) -> tuple[list[tuple[Path, str]], set[str]]:
+    """Return the (file, name in ZIP) pairs for an export, and the batches they come from."""
     entries: list[tuple[Path, str]] = []
     exported_batches: set[str] = set()
     for document in database.list_documents():
@@ -495,7 +491,32 @@ def export_zip(
             status_code=404,
             detail="No hay archivos para exportar con ese filtro. Aprueba al menos un documento.",
         )
+    return entries, exported_batches
 
+
+@app.post("/api/export/record")
+def record_export(request: ExportRecord) -> dict:
+    """Mark the batches of an export as downloaded, which clears the delete warning.
+
+    This is a POST from the UI, so the same-origin check applies: another site can't
+    clear the "not downloaded yet" warning by pointing an image at /api/export.
+    """
+    _, batches = _export_entries(request.scope, request.folder)
+    names = sorted(batches)
+    database.mark_batches_exported(names)
+    return {"ok": True, "batches": names}
+
+
+@app.get("/api/export")
+def export_zip(
+    scope: Annotated[str, Query(pattern="^(approved|all)$")] = "approved",
+    folder: str | None = None,
+) -> FileResponse:
+    """Build a ZIP of one batch or all of them, with approved files only or every file.
+
+    Downloading changes nothing; the UI reports it through POST /api/export/record.
+    """
+    entries, _ = _export_entries(scope, folder)
     export_dir = settings.state_dir / "exports"
     export_dir.mkdir(parents=True, exist_ok=True)
     handle, temporary_path = tempfile.mkstemp(suffix=".zip", dir=export_dir)
@@ -518,10 +539,6 @@ def export_zip(
     except Exception:
         archive_path.unlink(missing_ok=True)
         raise
-
-    # Marked before sending: the "not downloaded yet" warning that guards the delete button
-    # should clear even if the browser cancels the download halfway.
-    database.mark_batches_exported(sorted(exported_batches))
 
     label = (sanitize_folder_name(folder) or "raiz") if folder is not None else "todo"
     scope_label = "aprobados" if scope == "approved" else "todos"
