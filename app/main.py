@@ -31,7 +31,7 @@ from .naming import (
 from .ocr import recognize_selections, render_page
 from .security import BodySizeLimitMiddleware, SameOriginMiddleware
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 # Cap on one upload request. The browser sends one file per request once a file is
 # larger than its 40 MB batch size, so this is also the largest PDF that can be added.
 MAX_UPLOAD_BYTES = 300 * 1024 * 1024
