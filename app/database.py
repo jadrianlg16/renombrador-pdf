@@ -43,8 +43,9 @@ CREATE TABLE IF NOT EXISTS actions (
     FOREIGN KEY(document_id) REFERENCES documents(id)
 );
 
--- Sólo los lotes creados por /api/upload se registran aquí. Es la lista blanca de lo
--- que el botón "Limpiar lote" puede borrar: una carpeta copiada a mano nunca aparece.
+-- Whitelist of folders the "Limpiar lote" button may delete: batches created by
+-- /api/upload (source 'upload') and top-level inbox folders adopted by sync_documents
+-- (source 'adopted'). Loose PDFs in the inbox root never form a batch.
 CREATE TABLE IF NOT EXISTS batches (
     name TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
