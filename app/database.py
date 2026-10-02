@@ -73,7 +73,7 @@ class Database:
     FastAPI's worker threads. A lock serializes inbox syncs and batch changes.
     """
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._lock = threading.RLock()
         self._initialize()
