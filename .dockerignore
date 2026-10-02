@@ -9,7 +9,6 @@ data/
 *.log
 *.zip
 README.md
-VALIDACION.md
 *.bat
 run_linux.sh
 launcher.py
