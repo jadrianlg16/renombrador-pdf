@@ -167,7 +167,7 @@ On Windows, use `.venv\Scripts\python` in place of `.venv/bin/python`. `requirem
 
 The tests run the HTTP API against a temporary inbox: uploads, path traversal, ZIP layout, batch-deletion rules, approving, undo, skipping, the host allowlist, cross-site and fetch-metadata rules, security headers, body limits, render limits and error messages. They also cover filename sanitizing, OCR text cleanup, word segmentation, how readings are ranked and when they are flagged for review, and the launcher's port selection. Tesseract is faked where needed, so the tests don't need it installed.
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the same install, lint and test commands on Ubuntu, lints the UI with ESLint, then builds the Docker image and checks that it answers `/api/health` with Spanish OCR available and runs as a non-root user. Each step has been run locally, but the workflow has not run on GitHub yet.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the same install, lint and test commands on Ubuntu, lints the UI with ESLint, then builds the Docker image and checks that it answers `/api/health` with Spanish OCR available and runs as a non-root user.
 
 ## Configuration
 
