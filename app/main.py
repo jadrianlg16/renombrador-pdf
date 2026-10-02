@@ -90,13 +90,16 @@ def _get_document_or_404(document_id: str) -> dict:
     return document
 
 
+def _inside_inbox(path: Path) -> bool:
+    """Tell whether ``path`` is inside the inbox once symlinks and ".." are resolved."""
+    return path.resolve().is_relative_to(settings.input_dir.resolve())
+
+
 def _document_path(document: dict) -> Path:
     """Resolve a document's file on disk, refusing paths outside the inbox or missing files."""
     path = (settings.input_dir / document["current_relative_path"]).resolve()
-    try:
-        path.relative_to(settings.input_dir.resolve())
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Ruta de documento inválida") from exc
+    if not _inside_inbox(path):
+        raise HTTPException(status_code=400, detail="Ruta de documento inválida")
     if not path.exists():
         raise HTTPException(status_code=404, detail="El archivo ya no existe en la carpeta")
     return path
@@ -351,9 +354,7 @@ async def _store_upload(upload: UploadFile, batch_dir: Path) -> tuple[str | None
         return None, "Sólo se aceptan archivos .pdf"
 
     destination_dir = (batch_dir / relative).parent
-    try:
-        destination_dir.resolve().relative_to(settings.input_dir.resolve())
-    except ValueError:
+    if not _inside_inbox(destination_dir):
         return None, "Ruta de archivo inválida"
     destination_dir.mkdir(parents=True, exist_ok=True)
     destination = unique_target(destination_dir, PurePosixPath(relative).name)
@@ -502,7 +503,9 @@ def _export_entries(scope: str, folder: str | None) -> tuple[list[tuple[Path, st
         if folder is not None and document_batch != folder:
             continue
         path = settings.input_dir / relative
-        if not path.is_file():
+        # The same containment check as _document_path: a symlink in the inbox must not
+        # pull a file from elsewhere on the disk into the ZIP.
+        if not path.is_file() or not _inside_inbox(path):
             continue
         if document_batch:
             exported_batches.add(document_batch)

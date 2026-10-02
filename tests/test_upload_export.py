@@ -40,7 +40,7 @@ def test_upload_appends_to_an_existing_batch(client):
     assert test_client.get("/api/documents").json()["total"] == 2
 
 
-def test_upload_rejects_non_pdf_and_path_traversal(client):
+def test_upload_rejects_non_pdfs_and_keeps_traversal_paths_inside_the_batch(client):
     test_client, module = client
     response = upload(test_client, ["notas.txt", "../../escape.pdf"], folder="Lote")
     payload = response.json()
@@ -215,3 +215,20 @@ def test_documents_keep_a_stable_order_after_approving(client):
     test_client.post(f"/api/documents/{before[0]}/approve", json={"name": "ZZZ ÚLTIMO"})
     after = [item["id"] for item in test_client.get("/api/documents").json()["documents"]]
     assert before == after
+
+
+def test_export_leaves_out_symlinks_that_point_outside_the_inbox(client, tmp_path):
+    test_client, module = client
+    upload(test_client, ["a.pdf"], folder="Lote")
+    secret = tmp_path / "fuera" / "secreto.pdf"
+    secret.parent.mkdir()
+    secret.write_bytes(MINIMAL_PDF)
+    try:
+        (module.settings.input_dir / "Lote" / "enlace.pdf").symlink_to(secret)
+    except OSError:
+        pytest.skip("creating symlinks needs Developer Mode or admin rights on Windows")
+    test_client.post("/api/sync")
+
+    response = test_client.get("/api/export", params={"scope": "all"})
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        assert archive.namelist() == ["Lote/a.pdf"]
