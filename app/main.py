@@ -26,11 +26,15 @@ from .naming import (
     unique_target,
 )
 from .ocr import recognize_selections, render_page
-from .security import SameOriginMiddleware
+from .security import BodySizeLimitMiddleware, SameOriginMiddleware
 
 
 APP_VERSION = "1.2.0"
+# Cap on one upload request. The browser sends one file per request once a file is
+# larger than its 40 MB batch size, so this is also the largest PDF that can be added.
 MAX_UPLOAD_BYTES = 300 * 1024 * 1024
+# Every other request carries a small JSON body (or none).
+MAX_REQUEST_BYTES = 1024 * 1024
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 
 settings = get_settings()
@@ -45,6 +49,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Renombrador PDF", version=APP_VERSION, lifespan=lifespan)
+app.add_middleware(
+    BodySizeLimitMiddleware,
+    limits={"/api/upload": MAX_UPLOAD_BYTES},
+    default_limit=MAX_REQUEST_BYTES,
+)
+# Added last so it runs first: a cross-site request is refused before its body is read.
 app.add_middleware(SameOriginMiddleware)
 app.mount("/static", StaticFiles(directory=settings.base_dir / "app" / "static"), name="static")
 
@@ -89,6 +99,11 @@ def health() -> dict:
         "ocr_languages": settings.ocr_languages,
         "available_languages": languages,
     }
+
+
+@app.get("/api/config")
+def client_config() -> dict:
+    return {"max_upload_bytes": MAX_UPLOAD_BYTES}
 
 
 @app.post("/api/sync")
@@ -285,19 +300,10 @@ async def _store_upload(upload: UploadFile, batch_dir: Path) -> tuple[str | None
     if header[:5] != b"%PDF-":
         return None, "El archivo no es un PDF válido"
 
-    total = len(header)
-    too_large = False
     with destination.open("wb") as handle:
         handle.write(header)
         while chunk := await upload.read(UPLOAD_CHUNK_BYTES):
-            total += len(chunk)
-            if total > MAX_UPLOAD_BYTES:
-                too_large = True
-                break
             handle.write(chunk)
-    if too_large:
-        destination.unlink(missing_ok=True)
-        return None, f"Supera el límite de {MAX_UPLOAD_BYTES // (1024 * 1024)} MB"
     return destination.relative_to(settings.input_dir).as_posix(), None
 
 

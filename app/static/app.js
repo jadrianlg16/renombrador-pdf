@@ -14,6 +14,7 @@ const state = {
   batches: [],
   latestUpload: null,
   modalOpen: false,
+  maxUploadBytes: null,
 };
 
 const ALL_BATCHES = '__all__';
@@ -842,17 +843,28 @@ async function uploadItems(items, folderName) {
     return;
   }
 
-  const groups = groupUploads(pdfItems);
-  const totalBytes = pdfItems.reduce((sum, item) => sum + (item.file.size || 0), 0);
+  // The server refuses an oversized request before reading it, so files over the limit
+  // are left out here instead of aborting the rest of the folder halfway through.
+  const limit = state.maxUploadBytes;
+  const limitLabel = limit ? `${Math.floor(limit / (1024 * 1024))} MB` : '';
+  const oversized = limit ? pdfItems.filter((item) => item.file.size > limit) : [];
+  const sendable = pdfItems.filter((item) => !oversized.includes(item));
+  if (!sendable.length) {
+    showToast(`Ningún PDF entra en el límite de ${limitLabel} por archivo.`, 'error');
+    return;
+  }
+
+  const groups = groupUploads(sendable);
+  const totalBytes = sendable.reduce((sum, item) => sum + (item.file.size || 0), 0);
   let uploadedBytes = 0;
   let batch = null;
   let saved = 0;
-  const rejected = [];
+  const rejected = oversized.map((item) => ({ name: item.relative, reason: `Supera el límite de ${limitLabel}` }));
   let completed = false;
 
   state.uploading = true;
   setBusy(true);
-  showUploadProgress(0, `Subiendo ${pdfItems.length} archivos…`);
+  showUploadProgress(0, `Subiendo ${sendable.length} archivos…`);
   try {
     for (const group of groups) {
       const form = new FormData();
@@ -863,7 +875,7 @@ async function uploadItems(items, folderName) {
       const groupBytes = group.reduce((sum, item) => sum + (item.file.size || 0), 0);
       const result = await sendUpload(form, (loaded) => {
         const ratio = totalBytes ? (uploadedBytes + Math.min(loaded, groupBytes)) / totalBytes : 0;
-        showUploadProgress(ratio, `Subiendo ${Math.round(Math.min(1, ratio) * 100)}% de ${pdfItems.length} archivos`);
+        showUploadProgress(ratio, `Subiendo ${Math.round(Math.min(1, ratio) * 100)}% de ${sendable.length} archivos`);
       });
       uploadedBytes += groupBytes;
       batch = result.batch || batch;
@@ -1056,4 +1068,14 @@ window.addEventListener('keydown', (event) => {
   }
 });
 
+async function loadConfig() {
+  try {
+    const config = await request('/api/config');
+    state.maxUploadBytes = config.max_upload_bytes || null;
+  } catch (_) {
+    // Without the limit the server still refuses oversized uploads; they just aren't filtered here.
+  }
+}
+
+loadConfig();
 loadDocuments().catch((error) => showToast(error.message, 'error'));
