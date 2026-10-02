@@ -41,3 +41,9 @@ def test_every_response_gets_nosniff_including_refusals(client):
     ):
         assert response.headers["x-content-type-options"] == "nosniff"
         assert response.headers["referrer-policy"] == "same-origin"
+
+
+def test_no_interactive_docs_that_would_load_a_cdn(client):
+    test_client, _ = client
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert test_client.get(path).status_code == 404

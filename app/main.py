@@ -59,7 +59,16 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-app = FastAPI(title="Renombrador PDF", version=APP_VERSION, lifespan=lifespan)
+# No /docs or /redoc: Swagger UI loads its scripts from a CDN, which the CSP below blocks
+# and which an offline tool should not call anyway.
+app = FastAPI(
+    title="Renombrador PDF",
+    version=APP_VERSION,
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 app.add_middleware(
     BodySizeLimitMiddleware,
     limits={"/api/upload": MAX_UPLOAD_BYTES},
