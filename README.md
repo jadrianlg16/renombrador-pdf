@@ -10,7 +10,7 @@ Renombrador PDF (Spanish for "PDF renamer") is a local web app for offices that 
 
 *Recorded with the demo PDF from `generate_demo_pdf.py`; the name in it is made up. There is no hosted demo: the app reads and renames files on your own disk.*
 
-**Contents:** [Features](#features) · [How it works](#how-it-works) · [Engineering highlights](#engineering-highlights) · [Tech stack](#tech-stack-and-design-decisions) · [Getting started](#getting-started) · [Tests](#tests) · [Configuration](#configuration) · [Limitations](#limitations) · [License](#license) · [Author](#author)
+**Contents:** [Features](#features) · [How it works](#how-it-works) · [Engineering highlights](#engineering-highlights) · [Tech stack](#tech-stack-and-design-decisions) · [Getting started](#getting-started) · [Tests, lint and CI](#tests-lint-and-ci) · [Configuration](#configuration) · [Limitations](#limitations) · [License](#license) · [Author](#author)
 
 ## Features
 
@@ -47,7 +47,7 @@ flowchart LR
 ## Engineering highlights
 
 - **Upload paths can't escape the inbox.** Each path component the browser sends is cleaned: drive letters and `..` are dropped, characters Windows rejects become spaces, each component is capped at 120 characters, and only the last six levels are kept. Then the destination is checked with `resolve().relative_to(inbox)` before anything is written. The same check runs before a stored document is served, rendered, read by OCR or approved. See `safe_upload_relative_path` in [`app/naming.py`](app/naming.py), and `_store_upload` and `_document_path` in [`app/main.py`](app/main.py).
-- **Uploads are sniffed and capped.** The extension isn't trusted: the first five bytes must be `%PDF-`. The file is then copied into the inbox in 1 MB chunks, and the copy is deleted and rejected as soon as it passes 300 MB. See `_store_upload` in [`app/main.py`](app/main.py).
+- **Requests are vetted before the app reads them.** The app has no login, so the guard against other web pages is the browser's own `Origin` header: a POST must name the host it was sent to (or, without `Origin`, carry a `Sec-Fetch-Site` that isn't cross-site), or it gets 403. Bodies are capped the same way: a `Content-Length` over the limit gets 413 at once, and a streamed body is cut off as soon as it passes it. Starlette would otherwise buffer a whole upload before the endpoint could check its size. The limit is 300 MB for uploads and 1 MB for everything else, and an upload must still start with `%PDF-`, whatever its extension. See [`app/security.py`](app/security.py) and `_store_upload` in [`app/main.py`](app/main.py).
 - **Deletion goes through a whitelist.** `POST /api/batches/{name}/delete` only accepts names in the `batches` table. Those are folders created by an upload, plus top-level inbox folders that the sync adopts. The endpoint refuses the inbox root and re-checks containment before `shutil.rmtree`, and loose PDFs in the inbox root never form a deletable batch. See `delete_batch` in [`app/main.py`](app/main.py) and the `batches` table in [`app/database.py`](app/database.py).
 - **Disagreement between readings forces review.** `recognize_crop` collects every candidate, removes duplicates and ranks them. `_candidates_disagree` then compares the winner with the alternatives of similar confidence (`difflib` ratio below 0.985), so a 95% reading can still be flagged when another reading says something different. See [`app/ocr.py`](app/ocr.py).
 - **Windows-safe names, validated input.** `sanitize_pdf_name` applies NFC normalization, replaces `<>:"/\|?*` and control characters, trims leading and trailing dots and spaces, and suffixes reserved device names (`CON` becomes `CON_`). `unique_target` picks a free ` (n)` name instead of overwriting. Request bodies are Pydantic models with bounds: box coordinates between 0 and 1, at most 20 boxes per request, and names of 1 to 220 characters. See [`app/naming.py`](app/naming.py) and [`app/models.py`](app/models.py).
@@ -66,26 +66,33 @@ flowchart LR
 - **Regions instead of full-page OCR.** The operator already knows where the name is. Reading a small crop at high resolution is quick and can't pick the wrong name from a page full of names.
 - **The files are the source of truth.** On startup, and whenever you press *Actualizar carpeta*, the inbox is rescanned: new PDFs are added, vanished ones are marked missing, and returning ones are restored.
 - **Uploads are copies.** Uploaded files are copied into `data/inbox/<batch>`, and renames happen there, so the originals on your disk are left alone.
-- **Typed code.** The `app/` package has type annotations on every parameter.
+- **The container runs unprivileged.** `docker-entrypoint.sh` starts as root only to hand `/app/data` to the `app` user (uid 10001), which also converts a volume written by an older image that ran as root, and then drops privileges with `setpriv`. A host folder owned by a regular user is left alone and the server runs as that user instead.
+- **Typed, documented code.** The `app/` package has type annotations on every parameter and a docstring on every public function, and ruff enforces lint, formatting and the docstrings.
 
 ### Project structure
 
 ```text
 app/
-  main.py            FastAPI routes: documents, OCR, approve/skip/undo, upload, batches, export
-  ocr.py             page and crop rendering, preprocessing variants, Tesseract runs, ranking
-  naming.py          filename and upload-path sanitizing, collision-free targets
-  database.py        SQLite schema, inbox sync, action history, batch registry
-  models.py          Pydantic request models
-  config.py          settings from environment variables, Tesseract discovery
-  static/            index.html, app.js, styles.css
-tests/               pytest suite (naming, OCR helpers, launcher, HTTP API)
-data/                inbox/ for the PDFs, state/ for SQLite and ZIP exports (contents git-ignored)
-launcher.py          picks a free port, waits for /api/health, opens the browser
-generate_demo_pdf.py writes a one-page demo PDF into data/inbox
-run_linux.sh         starts the launcher from .venv (macOS / Linux)
-*_windows.bat        setup, run and stop helpers (Windows)
-Dockerfile           Python 3.12 slim image with Tesseract (spa, eng); docker-compose.yml wraps it
+  main.py              FastAPI routes: documents, OCR, approve/skip/undo, upload, batches, export
+  security.py          same-origin check and request body limits (ASGI middleware)
+  ocr.py               page and crop rendering, preprocessing variants, Tesseract runs, ranking
+  naming.py            filename and upload-path sanitizing, collision-free targets
+  database.py          SQLite schema, inbox sync, action history, batch registry
+  models.py            Pydantic request models
+  config.py            settings from environment variables, Tesseract discovery
+  static/              index.html, app.js, styles.css, favicon.ico
+tests/                 pytest suite: HTTP API, CSRF and size limits, naming, OCR, launcher
+data/                  inbox/ for the PDFs, state/ for SQLite and ZIP exports (contents git-ignored)
+docs/                  the GIF and screenshot in this README
+launcher.py            picks a free port, waits for /api/health, opens the browser
+generate_demo_pdf.py   writes a one-page demo PDF into data/inbox
+run_linux.sh           starts the launcher from .venv (macOS / Linux)
+*_windows.bat          setup, run and stop helpers (Windows)
+Dockerfile             Python 3.12 slim image with Tesseract (spa, eng); docker-compose.yml wraps it
+docker-entrypoint.sh   fixes /app/data ownership, then runs the server as an unprivileged user
+requirements*.txt      runtime dependencies; requirements-dev.txt adds pytest, httpx and ruff
+pyproject.toml         ruff and pytest settings
+.github/workflows/     CI: lint, tests, and a Docker build with a health check
 ```
 
 ## Getting started
@@ -121,7 +128,7 @@ py -3.12 -m venv .venv
 .venv\Scripts\python launcher.py
 ```
 
-The launcher binds to `127.0.0.1` and takes the first free port from 8765 to 8799. It waits until `/api/health` answers, then opens your browser. Use `--port 8770` to choose the port and `--no-browser` to skip opening the browser; press `Ctrl+C` to stop. Helper scripts: once `.venv` exists, `sh run_linux.sh` starts the launcher on macOS / Linux. On Windows, `setup_windows.bat` and `run_windows.bat` do the install and start steps from a double-click. `stop_windows.bat` stops every running instance on ports 8765 to 8799; read the [user guide](README.es.md#cómo-cerrar-la-aplicación) before using it alongside Docker.
+The launcher binds to `127.0.0.1` and takes the first free port from 8765 to 8799. It waits until `/api/health` answers, then opens your browser. Use `--port 8770` to choose the port and `--no-browser` to skip opening the browser; press `Ctrl+C` to stop. Helper scripts: once `.venv` exists, `sh run_linux.sh` starts the launcher on macOS / Linux. On Windows, `setup_windows.bat` and `run_windows.bat` do the install and start steps from a double-click. `stop_windows.bat` stops every instance on ports 8765 to 8799 that is this app's own Python process; a Docker container on one of those ports is reported and left running.
 
 Optional (shown for macOS / Linux; on Windows use `.venv\Scripts\python`):
 
@@ -139,16 +146,24 @@ docker build -t renombrador-pdf .
 docker run --rm -p 127.0.0.1:8765:8000 -v "$PWD/data:/app/data" renombrador-pdf
 ```
 
-Then open `http://127.0.0.1:8765`. The image already includes Tesseract with Spanish and English. The mount makes the container use this repo's `data/` folder, so files you copy into `data/inbox` show up in the app. In PowerShell the same two lines work unchanged.
+Then open `http://127.0.0.1:8765`. The image already includes Tesseract with Spanish and English. The mount makes the container use this repo's `data/` folder, so files you copy into `data/inbox` show up in the app. In PowerShell the same two lines work unchanged. `docker compose up --build` does the same, also publishing on `127.0.0.1` only.
 
-## Tests
+The server in the container runs as an unprivileged user, not root. On Linux, when the mounted `data/` folder belongs to you, it runs as your user, so the files it creates stay yours.
+
+## Tests, lint and CI
 
 ```bash
-.venv/bin/python -m pip install pytest httpx
-.venv/bin/python -m pytest tests
+.venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python -m pytest
+.venv/bin/python -m ruff check .
+.venv/bin/python -m ruff format --check .
 ```
 
-On Windows, use `.venv\Scripts\python` in place of `.venv/bin/python`. FastAPI's `TestClient` needs `httpx`, which `requirements.txt` doesn't list. The tests cover filename and upload-path sanitizing, OCR text cleanup and word segmentation, and the launcher's port selection. They also exercise the HTTP API against a temporary inbox: upload validation, path traversal, ZIP layout, batch-deletion rules and stable ordering. They don't need Tesseract.
+On Windows, use `.venv\Scripts\python` in place of `.venv/bin/python`. `requirements-dev.txt` adds pytest, httpx (FastAPI's `TestClient` needs it) and a pinned ruff to the runtime requirements.
+
+The tests run the HTTP API against a temporary inbox: uploads, path traversal, ZIP layout, batch-deletion rules, approving, undo, skipping, cross-site rejection and the body limits. They also cover filename sanitizing, OCR text cleanup, word segmentation, how readings are ranked and when they are flagged for review, and the launcher's port selection. Tesseract is faked where needed, so the tests don't need it installed.
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the same install, lint and test commands on Ubuntu, then builds the Docker image and checks that it answers `/api/health` with Spanish OCR available and runs as a non-root user. Each step has been run locally, but the workflow has not run on GitHub yet.
 
 ## Configuration
 
@@ -159,15 +174,15 @@ The app reads these environment variables:
 | `PDF_INPUT_DIR` | `data/inbox` | Folder scanned for PDFs. Uploads and renames happen here. |
 | `PDF_STATE_DIR` | `data/state` | Holds the SQLite database (`renamer.db`) and the temporary ZIP files. |
 | `PDF_OCR_DPI` | `450` | Resolution used to render a marked region for OCR. |
-| `PDF_RENDER_DPI` | `150` | Default resolution of the page-image endpoint when a request doesn't pass `dpi`. The bundled UI always asks for 150, so this setting doesn't change the UI. |
+| `PDF_RENDER_DPI` | `150` | Resolution of the page images in the viewer. A request can still pass `dpi` (72 to 250). |
 | `OCR_LANGUAGES` | `spa+eng` | Tesseract language string. |
 | `TESSERACT_CMD` | auto-detected | Full path to the `tesseract` executable. |
 
-The defaults are relative to the repo root; a relative path you set yourself is resolved from the current directory. Some limits are fixed in code: 300 MB per uploaded file, 20 boxes per OCR request and 220 characters per name. The browser also sends uploads in requests of at most 25 files or 40 MB.
+The defaults are relative to the repo root; a relative path you set yourself is resolved from the current directory. Some limits are fixed in code: 300 MB per upload request, 1 MB for any other request, 20 boxes per OCR request and 220 characters per name. The browser sends uploads in requests of at most 25 files or 40 MB, so a larger file goes alone, and it leaves out and reports any file over 300 MB.
 
 ## Limitations
 
-- **Local, single-user tool.** There is no authentication or CSRF protection, and uploads are only checked for a `%PDF-` signature. Run it on your own machine with files you trust, and don't expose the port. `docker compose up` publishes it on all interfaces; change the mapping in `docker-compose.yml` to `127.0.0.1:8765:8000` if you use it.
+- **Local, single-user tool.** There is no authentication: anyone who can reach the port can rename and delete files. Requests from other web pages are refused, but the `Host` header is not checked against an allowlist, so DNS rebinding is not blocked. Uploads are only checked for a `%PDF-` signature. Run it on your own machine with files you trust, and keep it on `127.0.0.1`, as the launcher, the Docker commands above and `docker-compose.yml` do.
 - **OCR quality follows scan quality.** The confidence number is advisory, and faint, skewed or handwritten names can need manual correction. That is why review can't be skipped.
 - **Renames happen in place.** If you copy files into `data/inbox`, or mount a real folder there, those files are renamed, and *Limpiar lote* deletes them permanently. Only browser uploads are copies.
 - **Spanish-only interface.** `OCR_LANGUAGES` changes the OCR languages, but every label and message is in Spanish.

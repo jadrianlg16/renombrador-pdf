@@ -62,9 +62,9 @@ docker build -t renombrador-pdf .
 docker run --rm -p 127.0.0.1:8765:8000 -v "$PWD/data:/app/data" renombrador-pdf
 ```
 
-Después abre `http://127.0.0.1:8765`. La carpeta `data` del proyecto queda montada dentro del contenedor, así que también puedes copiar PDF a mano a `data/inbox`. La imagen ya incluye Tesseract con español e inglés.
+Después abre `http://127.0.0.1:8765`. La carpeta `data` del proyecto queda montada dentro del contenedor, así que también puedes copiar PDF a mano a `data/inbox`. La imagen ya incluye Tesseract con español e inglés. `docker compose up --build` hace lo mismo y también publica el puerto solo en `127.0.0.1`.
 
-> El archivo `docker-compose.yml` publica el puerto en todas las interfaces de red. Si lo usas, cambia `"8765:8000"` por `"127.0.0.1:8765:8000"` para que solo tu equipo pueda abrir la aplicación.
+Dentro del contenedor la aplicación no corre como root, sino con un usuario sin privilegios. En Linux, si la carpeta `data` montada es tuya, corre con tu usuario, así que los archivos que crea siguen siendo tuyos.
 
 ### Probar con un PDF de ejemplo
 
@@ -77,8 +77,8 @@ En Windows usa `.venv\Scripts\python generate_demo_pdf.py`. Esto crea `data/inbo
 ## Cómo cerrar la aplicación
 
 - Lo normal: presiona `Ctrl+C` en la ventana negra que se abrió al iniciar, o simplemente ciérrala.
-- En Windows, si perdiste la ventana o hay varias instancias abiertas, ejecuta `stop_windows.bat`. Revisa los puertos 8765 a 8799, confirma con `/api/health` que cada uno sea el Renombrador y cierra todas las instancias que encuentre.
-- No uses `stop_windows.bat` mientras corre el contenedor de Docker: en ese caso el puerto lo ocupa Docker Desktop y el script lo cerraría a la fuerza. Detén el contenedor con `Ctrl+C` o `docker stop`.
+- En Windows, si perdiste la ventana o hay varias instancias abiertas, ejecuta `stop_windows.bat`. Revisa los puertos 8765 a 8799 y cierra cada instancia que sea el Renombrador: lo confirma con `/api/health` y comprobando que el puerto sea del proceso de Python de la aplicación.
+- Un contenedor de Docker en esos puertos no se toca: el script lo muestra como omitido. Detenlo con `Ctrl+C` o `docker stop`.
 
 ## Flujo de trabajo
 
@@ -128,18 +128,18 @@ Variables de entorno:
 | `PDF_INPUT_DIR` | `data/inbox` | Carpeta con los PDF; ahí se guardan las subidas y se renombran los archivos |
 | `PDF_STATE_DIR` | `data/state` | Base de datos SQLite (`renamer.db`) y ZIP temporales |
 | `PDF_OCR_DPI` | `450` | Resolución del recorte que se lee con OCR |
-| `PDF_RENDER_DPI` | `150` | Resolución predeterminada de la imagen de página cuando la petición no indica otra; la interfaz siempre pide 150 |
+| `PDF_RENDER_DPI` | `150` | Resolución de las imágenes de página que muestra el visor |
 | `OCR_LANGUAGES` | `spa+eng` | Idiomas de Tesseract |
 | `TESSERACT_CMD` | autodetección | Ruta al ejecutable de Tesseract |
 
-El límite por archivo subido es de 300 MB. El navegador envía la carpeta en tandas de hasta 25 archivos o 40 MB, para que un lote grande no dependa de una sola petición.
+El límite por archivo subido es de 300 MB: el navegador deja fuera los archivos más grandes y los reporta como rechazados, y el servidor rechaza una petición más grande antes de recibirla. El navegador envía la carpeta en tandas de hasta 25 archivos o 40 MB, para que un lote grande no dependa de una sola petición.
 
 ## Seguridad y recuperación
 
 - Cada aprobación queda registrada en `data/state/renamer.db`. El botón **Deshacer último** restaura el nombre anterior, siempre que no exista ya otro archivo con ese nombre. Puedes presionarlo varias veces para deshacer, uno por uno, los renombrados más recientes.
 - Los archivos nunca se sobrescriben: si el nombre ya existe, se agrega `(2)`, `(3)`, etc. Se conservan los acentos y se reemplazan los caracteres que Windows no acepta.
 - Si copias tus PDF directamente a `data/inbox` (en lugar de subirlos), se renombran esos mismos archivos. Para tener un respaldo, duplica la carpeta original antes de empezar.
-- La aplicación no tiene usuarios ni contraseñas: cualquiera que pueda abrir su dirección puede ver, renombrar y borrar archivos. Úsala solo en `127.0.0.1` y no la expongas en una red.
+- La aplicación no tiene usuarios ni contraseñas: cualquiera que pueda abrir su dirección puede ver, renombrar y borrar archivos. Rechaza las peticiones que llegan desde otras páginas web, pero eso no sustituye una contraseña. Úsala solo en `127.0.0.1` y no la expongas en una red.
 
 ## Problemas frecuentes
 
