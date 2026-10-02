@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import difflib
 import io
+import math
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -20,6 +21,13 @@ import pymupdf
 import pytesseract
 from PIL import Image
 from pytesseract import Output
+
+# Largest image the server renders, for the viewer and for OCR alike. A 40 Mpx RGB
+# pixmap takes about 120 MB; a 3000 x 3000 pt page at 450 dpi would be 351 Mpx and over
+# 3 GB, so anything bigger is rendered at a lower resolution instead.
+MAX_RENDER_PIXELS = 40_000_000
+# The crops shown next to the reading only need to be legible in a 420 px panel.
+PREVIEW_MAX_SIDE = 1600
 
 
 @dataclass
@@ -58,8 +66,20 @@ def join_name_parts(parts: list[str]) -> str:
     return re.sub(r"\s+", " ", " ".join(part.replace("\n", " ") for part in parts)).strip()
 
 
+def capped_dpi(width_pt: float, height_pt: float, dpi: int) -> int:
+    """Return ``dpi``, lowered as far as needed to keep the render within MAX_RENDER_PIXELS."""
+    width_in, height_in = max(width_pt, 1.0) / 72, max(height_pt, 1.0) / 72
+    # The +1 per side covers PyMuPDF rounding the pixmap up to whole pixels.
+    while dpi > 1 and (width_in * dpi + 1) * (height_in * dpi + 1) > MAX_RENDER_PIXELS:
+        dpi = min(dpi - 1, math.floor(math.sqrt(MAX_RENDER_PIXELS / (width_in * height_in))))
+    return max(dpi, 1)
+
+
 def _encode_png(image: np.ndarray) -> str:
-    """Encode an OpenCV image as base64 PNG for the review panel."""
+    """Encode an OpenCV image as base64 PNG for the review panel, scaled down if large."""
+    scale = PREVIEW_MAX_SIDE / max(image.shape[0], image.shape[1])
+    if scale < 1:
+        image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
     if len(image.shape) == 2:
         pil_image = Image.fromarray(image)
     else:
@@ -70,11 +90,15 @@ def _encode_png(image: np.ndarray) -> str:
 
 
 def render_page(pdf_path: str, page_number: int, dpi: int) -> tuple[bytes, int]:
-    """Render one page (1-based) as PNG bytes; returns the image and the page count."""
+    """Render one page (1-based) as PNG bytes; returns the image and the page count.
+
+    Oversized pages are rendered below ``dpi`` (see MAX_RENDER_PIXELS).
+    """
     with pymupdf.open(pdf_path) as document:
         if page_number < 1 or page_number > document.page_count:
             raise ValueError("Página fuera de rango")
         page = document.load_page(page_number - 1)
+        dpi = capped_dpi(page.rect.width, page.rect.height, dpi)
         pixmap = page.get_pixmap(dpi=dpi, alpha=False)
         return pixmap.tobytes("png"), document.page_count
 
@@ -87,7 +111,8 @@ def render_crop(
 ) -> np.ndarray:
     """Render just the selected region of a page at ``dpi`` as a BGR image.
 
-    The selection is in page fractions; a small margin is added around it.
+    The selection is in page fractions; a small margin is added around it. A region too
+    large for MAX_RENDER_PIXELS at ``dpi`` is rendered at a lower resolution.
     """
     with pymupdf.open(pdf_path) as document:
         if page_number < 1 or page_number > document.page_count:
@@ -114,6 +139,7 @@ def render_crop(
             page_rect.x0 + x1 * page_rect.width,
             page_rect.y0 + y1 * page_rect.height,
         )
+        dpi = capped_dpi(clip.width, clip.height, dpi)
         pixmap = page.get_pixmap(dpi=dpi, clip=clip, alpha=False)
         array = np.frombuffer(pixmap.samples, dtype=np.uint8)
         array = array.reshape(pixmap.height, pixmap.width, pixmap.n)
