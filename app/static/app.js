@@ -270,7 +270,8 @@ async function loadPage() {
     elements.pageLoading.hidden = true;
     showToast('No se pudo cargar la página', 'error');
   };
-  elements.pageImage.src = `/api/documents/${state.currentDocument.id}/page/${state.currentPage}?dpi=150&t=${Date.now()}`;
+  // No dpi parameter: the server renders at PDF_RENDER_DPI.
+  elements.pageImage.src = `/api/documents/${state.currentDocument.id}/page/${state.currentPage}?t=${Date.now()}`;
   elements.pageIndicator.textContent = `Página ${state.currentPage} de ${state.pageCount}`;
   updateControls();
 }

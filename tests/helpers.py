@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import importlib
 import io
+from collections.abc import Iterator
+from contextlib import contextmanager
+from types import ModuleType
 
 from fastapi.testclient import TestClient
 from httpx import Response
@@ -15,6 +19,19 @@ MINIMAL_PDF = (
     b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\n"
     b"trailer<</Root 1 0 R>>\n"
 )
+
+
+@contextmanager
+def open_app() -> Iterator[tuple[TestClient, ModuleType]]:
+    """Reload ``app.main`` so it reads the current environment, and serve it in-process."""
+    import app.main as main
+
+    module = importlib.reload(main)
+    try:
+        with TestClient(module.app) as test_client:
+            yield test_client, module
+    finally:
+        importlib.reload(main)
 
 
 def upload(test_client: TestClient, names: list[str], **data: str) -> Response:
