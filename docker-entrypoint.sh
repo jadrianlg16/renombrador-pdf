@@ -1,10 +1,11 @@
 #!/bin/sh
 # Container entrypoint: makes /app/data writable for an unprivileged user, then drops root.
 #
-# A volume created by an earlier image that ran as root holds root-owned files, so they are
-# handed to the "app" user before the server starts. When /app/data is a host folder that a
-# regular user owns (a bind mount on Linux), the server runs as that user instead, so files
-# on the host keep their owner.
+# The server runs as whoever owns /app/data: the "app" user for a named volume, or the host
+# user when a folder they own is bind-mounted (on Linux), so the files on the host keep their
+# owner. A root-owned /app/data, such as a volume written by an earlier image that ran as
+# root, is handed to "app". Anything inside that belongs to someone else, for example files
+# such an image created, is then given to the same user so the server can rename and delete it.
 set -eu
 
 data_dir=/app/data
@@ -15,16 +16,19 @@ if [ "$(id -u)" != "0" ]; then
 fi
 
 mkdir -p "$data_dir/inbox" "$data_dir/state"
-app_uid="$(id -u app)"
-owner_uid="$(stat -c %u "$data_dir")"
 
-if [ "$owner_uid" != "0" ] && [ "$owner_uid" != "$app_uid" ]; then
-    run_uid="$owner_uid"
-    run_gid="$(stat -c %g "$data_dir")"
-else
-    find "$data_dir" \( ! -user app -o ! -group app \) -exec chown app:app {} +
-    run_uid="$app_uid"
-    run_gid="$(id -g app)"
+if [ "$(stat -c %u "$data_dir")" = "0" ]; then
+    chown app:app "$data_dir" 2>/dev/null || true
 fi
+run_uid="$(stat -c %u "$data_dir")"
+run_gid="$(stat -c %g "$data_dir")"
+
+if [ "$run_uid" = "0" ]; then
+    # Some network filesystems refuse chown. Keep working as earlier images did.
+    echo "docker-entrypoint: cannot change the owner of $data_dir; running as root" >&2
+    exec "$@"
+fi
+
+find "$data_dir" \( ! -user "$run_uid" -o ! -group "$run_gid" \) -exec chown "$run_uid:$run_gid" {} +
 
 exec setpriv --reuid="$run_uid" --regid="$run_gid" --clear-groups -- "$@"
