@@ -1,0 +1,4 @@
+# Shell scripts run inside Linux containers and on macOS/Linux: keep LF on every checkout.
+*.sh text eol=lf
+# cmd.exe mishandles line continuations and labels in LF-only batch files.
+*.bat text eol=crlf
