@@ -1,3 +1,5 @@
+"""OCR text cleanup and visual word segmentation (no Tesseract needed)."""
+
 import cv2
 import numpy as np
 

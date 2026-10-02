@@ -1,3 +1,5 @@
+"""Port selection in the launcher."""
+
 from __future__ import annotations
 
 import socket

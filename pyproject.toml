@@ -13,7 +13,15 @@ select = [
     "B",   # flake8-bugbear
     "UP",  # pyupgrade
     "SIM", # flake8-simplify
+    "D1",  # docstrings on public modules, classes and functions
 ]
+ignore = [
+    "D105", # magic methods: the class docstring covers them
+    "D107", # __init__: the class docstring covers it
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D1"]  # test names state the behavior they check
 
 [tool.ruff.lint.isort]
 known-first-party = ["app", "launcher", "helpers"]

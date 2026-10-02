@@ -44,6 +44,7 @@ class SameOriginMiddleware:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Answer 403 to a cross-site write; pass everything else through."""
         if (
             scope["type"] == "http"
             and scope["method"] not in SAFE_METHODS
@@ -73,6 +74,7 @@ class BodySizeLimitMiddleware:
         self.default_limit = default_limit
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Answer 413 to an oversized body; count a streamed one as the app reads it."""
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return

@@ -1,3 +1,5 @@
+"""Uploads, ZIP export and batch deletion through the HTTP API."""
+
 from __future__ import annotations
 
 import io
@@ -44,7 +46,7 @@ def test_upload_rejects_non_pdf_and_path_traversal(client):
     payload = response.json()
     assert payload["saved"] == 1
     assert [item["name"] for item in payload["rejected"]] == ["notas.txt"]
-    # El .. se descarta y el archivo queda dentro del lote, nunca fuera de la bandeja.
+    # The .. is dropped: the file lands inside the batch, never outside the inbox.
     assert (module.settings.input_dir / "Lote" / "escape.pdf").is_file()
     assert not (module.settings.input_dir.parent / "escape.pdf").exists()
 
@@ -113,7 +115,7 @@ def test_deleting_a_batch_frees_the_name_for_a_new_upload(client):
     first = upload(test_client, ["a.pdf"], folder="Lote").json()
     assert first["batch"] == "Lote"
     test_client.post("/api/batches/Lote/delete")
-    # Sin borrar, un segundo "Lote" se habria llamado "Lote (2)".
+    # Without the delete, a second "Lote" would have been named "Lote (2)".
     second = upload(test_client, ["b.pdf"], folder="Lote").json()
     assert second["batch"] == "Lote"
     assert (module.settings.input_dir / "Lote" / "b.pdf").is_file()
@@ -138,7 +140,7 @@ def test_loose_pdfs_at_the_root_never_form_a_deletable_batch(client):
 
     listed = {b["name"]: b for b in test_client.get("/api/batches").json()["batches"]}
     assert listed[""]["deletable"] is False
-    # La bandeja completa jamas se borra, ni con el nombre vacio.
+    # The whole inbox is never deleted, not even through an empty batch name.
     assert test_client.post("/api/batches//delete").status_code in (404, 400, 405, 307)
     assert (module.settings.input_dir / "suelto.pdf").is_file()
 

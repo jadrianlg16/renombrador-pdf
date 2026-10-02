@@ -1,3 +1,5 @@
+"""SQLite state: documents, the action log behind undo, and the batch whitelist."""
+
 from __future__ import annotations
 
 import json
@@ -60,10 +62,17 @@ CREATE INDEX IF NOT EXISTS idx_actions_document ON actions(document_id);
 
 
 def utc_now() -> str:
+    """Return the current UTC time as an ISO 8601 string."""
     return datetime.now(UTC).isoformat()
 
 
 class Database:
+    """Stores review state in SQLite (WAL mode); the PDF files on disk stay the source of truth.
+
+    Each call opens its own short-lived connection, so the object can be shared by
+    FastAPI's worker threads. A lock serializes inbox syncs and batch changes.
+    """
+
     def __init__(self, settings: Settings):
         self.settings = settings
         self._lock = threading.RLock()
@@ -71,6 +80,7 @@ class Database:
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
+        """Open a connection that commits on success and always closes."""
         connection = sqlite3.connect(self.settings.database_path, timeout=30)
         connection.row_factory = sqlite3.Row
         try:
@@ -82,7 +92,7 @@ class Database:
     def _initialize(self) -> None:
         with self.connect() as connection:
             connection.executescript(SCHEMA)
-            # CREATE TABLE IF NOT EXISTS no agrega columnas a una base que ya existía.
+            # CREATE TABLE IF NOT EXISTS doesn't add columns to a database that already existed.
             columns = {row["name"] for row in connection.execute("PRAGMA table_info(batches)")}
             if "source" not in columns:
                 connection.execute(
@@ -90,6 +100,11 @@ class Database:
                 )
 
     def sync_documents(self) -> dict[str, int]:
+        """Reconcile the table with the PDFs in the inbox.
+
+        New files are added as pending, vanished ones are marked missing, returning ones
+        go back to pending, and every top-level folder is adopted as a batch.
+        """
         added = 0
         restored = 0
         missing = 0
@@ -107,9 +122,9 @@ class Database:
                     continue
                 relative = path.relative_to(self.settings.input_dir).as_posix()
                 disk_paths.add(relative)
-                # Cualquier carpeta de primer nivel que aparezca en la bandeja se adopta como
-                # lote, para que los que existían antes de esta tabla también sean borrables.
-                # Los PDF sueltos en la raíz no forman lote y por eso nunca son borrables.
+                # Every top-level folder in the inbox is adopted as a batch, so folders that
+                # predate the batches table can be deleted too. Loose PDFs in the root
+                # never form a batch and so are never deletable.
                 head, separator, _ = relative.partition("/")
                 if separator:
                     adopted.add(head)
@@ -165,6 +180,7 @@ class Database:
         return data
 
     def list_documents(self) -> list[dict[str, Any]]:
+        """Return all documents in their original folder order, which approving doesn't change."""
         with self.connect() as connection:
             rows = connection.execute(
                 """
@@ -175,6 +191,7 @@ class Database:
         return [self._document_dict(row) for row in rows]
 
     def get_document(self, document_id: str) -> dict[str, Any] | None:
+        """Return one document, or None if the id is unknown."""
         with self.connect() as connection:
             row = connection.execute(
                 "SELECT * FROM documents WHERE id=?", (document_id,)
@@ -182,6 +199,7 @@ class Database:
         return self._document_dict(row) if row else None
 
     def update_page_count(self, document_id: str, page_count: int) -> None:
+        """Store the page count read from the file."""
         with self.connect() as connection:
             connection.execute(
                 "UPDATE documents SET page_count=?, updated_at=? WHERE id=?",
@@ -195,6 +213,7 @@ class Database:
         ocr_text: str,
         selections: list[dict[str, Any]],
     ) -> None:
+        """Save the OCR proposal and the boxes it came from, without renaming anything."""
         with self.connect() as connection:
             connection.execute(
                 """
@@ -214,6 +233,7 @@ class Database:
         ocr_text: str | None,
         selections: list[dict[str, Any]],
     ) -> None:
+        """Record an approved rename on the document and in the action log."""
         now = utc_now()
         payload = {
             "proposed_name": proposed_name,
@@ -249,6 +269,7 @@ class Database:
             )
 
     def mark_skipped(self, document_id: str) -> None:
+        """Mark a document as skipped and log it."""
         now = utc_now()
         with self.connect() as connection:
             row = connection.execute(
@@ -271,6 +292,7 @@ class Database:
             )
 
     def latest_undoable_rename(self) -> dict[str, Any] | None:
+        """Return the newest rename that hasn't been undone, or None."""
         with self.connect() as connection:
             row = connection.execute(
                 """
@@ -282,6 +304,7 @@ class Database:
         return dict(row) if row else None
 
     def complete_undo(self, action_id: int, document_id: str, restored_path: str) -> None:
+        """Mark a rename as undone, put its document back to pending and log the undo."""
         now = utc_now()
         with self.connect() as connection:
             connection.execute("UPDATE actions SET undone=1 WHERE id=?", (action_id,))
@@ -304,6 +327,7 @@ class Database:
             )
 
     def register_batch(self, name: str, source: str = "upload") -> None:
+        """Add a batch to the whitelist, or refresh it if it is already there."""
         now = utc_now()
         with self._lock, self.connect() as connection:
             connection.execute(
@@ -311,18 +335,20 @@ class Database:
                 INSERT INTO batches (name, created_at, updated_at, source) VALUES (?, ?, ?, ?)
                 ON CONFLICT(name) DO UPDATE SET
                     updated_at=excluded.updated_at,
-                    -- Un lote adoptado que luego recibe una subida pasa a contar como subido.
+                    -- An adopted batch that later receives an upload counts as uploaded.
                     source=CASE WHEN excluded.source='upload' THEN 'upload' ELSE batches.source END
                 """,
                 (name, now, now, source),
             )
 
     def get_batch(self, name: str) -> dict[str, Any] | None:
+        """Return one whitelisted batch, or None."""
         with self.connect() as connection:
             row = connection.execute("SELECT * FROM batches WHERE name=?", (name,)).fetchone()
         return dict(row) if row else None
 
     def list_batches(self) -> list[dict[str, Any]]:
+        """Return every whitelisted batch, newest first."""
         with self.connect() as connection:
             rows = connection.execute(
                 "SELECT * FROM batches ORDER BY created_at DESC, name"
@@ -330,6 +356,7 @@ class Database:
         return [dict(row) for row in rows]
 
     def latest_batch(self) -> str | None:
+        """Return the name of the most recently created batch."""
         with self.connect() as connection:
             row = connection.execute(
                 "SELECT name FROM batches ORDER BY created_at DESC, rowid DESC LIMIT 1"
@@ -337,6 +364,7 @@ class Database:
         return row["name"] if row else None
 
     def mark_batches_exported(self, names: list[str]) -> None:
+        """Record that these batches were included in a ZIP export."""
         if not names:
             return
         now = utc_now()
@@ -347,13 +375,13 @@ class Database:
             )
 
     def delete_batch(self, name: str) -> int:
-        """Borra el registro del lote y los documentos que viven dentro de él."""
+        """Forget a batch and every document inside it; returns how many documents went."""
         prefix = f"{name}/"
         with self._lock, self.connect() as connection:
             rows = connection.execute(
                 "SELECT id, current_relative_path, original_relative_path FROM documents"
             ).fetchall()
-            # Se compara en Python: un nombre de lote con "%" o "_" rompería un LIKE.
+            # Compared in Python: a batch name containing "%" or "_" would break a LIKE.
             ids = [
                 row["id"]
                 for row in rows
@@ -367,6 +395,7 @@ class Database:
         return len(ids)
 
     def history(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Return the most recent actions with each document's current path, newest first."""
         with self.connect() as connection:
             rows = connection.execute(
                 """

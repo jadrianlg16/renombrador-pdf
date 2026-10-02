@@ -1,3 +1,5 @@
+"""Start the app on a free local port, wait until it answers, and open the browser."""
+
 from __future__ import annotations
 
 import argparse
@@ -20,6 +22,7 @@ DEFAULT_END_PORT = 8799
 
 
 def port_is_available(host: str, port: int) -> bool:
+    """Tell whether a TCP port can be bound on this host right now."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
@@ -30,6 +33,7 @@ def port_is_available(host: str, port: int) -> bool:
 
 
 def find_available_port(host: str, requested: int | None = None) -> int:
+    """Return the requested port, or raise if it is taken; else the first free one from 8765."""
     if requested is not None:
         if not port_is_available(host, requested):
             raise RuntimeError(
@@ -47,6 +51,11 @@ def find_available_port(host: str, requested: int | None = None) -> int:
 
 
 def wait_until_ready(url: str, process: subprocess.Popen[bytes], timeout: float = 30.0) -> None:
+    """Poll /api/health until this app answers; fail if the server exits or times out.
+
+    Checking ``app_id`` keeps the browser from opening on another program that
+    happens to answer on the same port.
+    """
     deadline = time.monotonic() + timeout
     health_url = f"{url}/api/health"
     while time.monotonic() < deadline:
@@ -66,6 +75,7 @@ def wait_until_ready(url: str, process: subprocess.Popen[bytes], timeout: float 
 
 
 def main() -> int:
+    """Run Uvicorn as a child process until it exits or Ctrl+C; returns the exit code."""
     parser = argparse.ArgumentParser(description="Inicia el Renombrador PDF local.")
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=None)

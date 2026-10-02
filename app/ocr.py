@@ -1,3 +1,10 @@
+"""Page rendering and region OCR: preprocessing variants, Tesseract runs and ranking.
+
+Every marked region is read several ways and the readings compete. The winner is
+proposed, and the result is flagged for review whenever confidence is low, the text
+looks noisy, or readings of similar confidence disagree.
+"""
+
 from __future__ import annotations
 
 import base64
@@ -17,6 +24,8 @@ from pytesseract import Output
 
 @dataclass
 class OCRCandidate:
+    """One reading of a region and how it was produced."""
+
     text: str
     confidence: float
     variant: str
@@ -32,6 +41,7 @@ NAME_WHITELIST = (
 
 
 def clean_ocr_text(text: str) -> str:
+    """Collapse whitespace and strip stray punctuation from each line, keeping line breaks."""
     lines = []
     for line in text.replace("\r", "\n").split("\n"):
         cleaned = re.sub(r"\s+", " ", line).strip(" \t|_:;,()[]{}")
@@ -44,10 +54,12 @@ def clean_ocr_text(text: str) -> str:
 
 
 def join_name_parts(parts: list[str]) -> str:
+    """Join the readings of several regions, and the lines inside them, into one name."""
     return re.sub(r"\s+", " ", " ".join(part.replace("\n", " ") for part in parts)).strip()
 
 
 def _encode_png(image: np.ndarray) -> str:
+    """Encode an OpenCV image as base64 PNG for the review panel."""
     if len(image.shape) == 2:
         pil_image = Image.fromarray(image)
     else:
@@ -58,9 +70,10 @@ def _encode_png(image: np.ndarray) -> str:
 
 
 def render_page(pdf_path: str, page_number: int, dpi: int) -> tuple[bytes, int]:
+    """Render one page (1-based) as PNG bytes; returns the image and the page count."""
     with pymupdf.open(pdf_path) as document:
         if page_number < 1 or page_number > document.page_count:
-            raise ValueError("Pagina fuera de rango")
+            raise ValueError("Página fuera de rango")
         page = document.load_page(page_number - 1)
         pixmap = page.get_pixmap(dpi=dpi, alpha=False)
         return pixmap.tobytes("png"), document.page_count
@@ -72,9 +85,13 @@ def render_crop(
     selection: dict[str, Any],
     dpi: int,
 ) -> np.ndarray:
+    """Render just the selected region of a page at ``dpi`` as a BGR image.
+
+    The selection is in page fractions; a small margin is added around it.
+    """
     with pymupdf.open(pdf_path) as document:
         if page_number < 1 or page_number > document.page_count:
-            raise ValueError("Pagina fuera de rango")
+            raise ValueError("Página fuera de rango")
         page = document.load_page(page_number - 1)
         page_rect = page.rect
         x = max(0.0, min(1.0, float(selection["x"])))
@@ -108,6 +125,7 @@ def render_crop(
 
 
 def _variants(image: np.ndarray) -> list[tuple[str, np.ndarray]]:
+    """Return named preprocessing variants (contrast, denoise, two binarizations, sharpen)."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     if gray.shape[1] < 1000:
         scale = min(3.0, max(1.5, 1200 / max(gray.shape[1], 1)))
@@ -135,6 +153,7 @@ def _variants(image: np.ndarray) -> list[tuple[str, np.ndarray]]:
 
 
 def _run_tesseract(image: np.ndarray, languages: str, psm: int, variant: str) -> OCRCandidate:
+    """Read one image with Tesseract, rebuilding lines from its word boxes."""
     config = f"--oem 3 --psm {psm} -c preserve_interword_spaces=1"
     data = pytesseract.image_to_data(image, lang=languages, config=config, output_type=Output.DICT)
     words: list[str] = []
@@ -169,6 +188,7 @@ def _run_tesseract(image: np.ndarray, languages: str, psm: int, variant: str) ->
 
 
 def _active_runs(mask: np.ndarray, gap_tolerance: int = 0) -> list[tuple[int, int]]:
+    """Return [start, end) runs of True in a 1-D mask, bridging gaps up to ``gap_tolerance``."""
     indexes = np.flatnonzero(mask)
     if indexes.size == 0:
         return []
@@ -243,6 +263,7 @@ def _visual_word_boxes(gray: np.ndarray) -> list[list[tuple[int, int, int, int]]
 
 
 def _run_word_tesseract(image: np.ndarray, languages: str) -> tuple[str, float]:
+    """Read one word image limited to letters, apostrophe and hyphen, with no dictionary."""
     config = (
         "--oem 3 --psm 8 "
         f'-c tessedit_char_whitelist="{NAME_WHITELIST}" '
@@ -271,6 +292,11 @@ def _run_word_tesseract(image: np.ndarray, languages: str) -> tuple[str, float]:
 
 
 def _visual_spacing_candidate(image: np.ndarray, languages: str) -> OCRCandidate | None:
+    """Read word by word from the gaps in the ink, when Tesseract's own spacing is wrong.
+
+    Tesseract can merge or split words on a scan; cutting the line at the visual gaps
+    first rebuilds the spaces. Returns None unless it finds two or more words.
+    """
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     if gray.shape[1] < 1000:
         scale = min(3.0, max(1.5, 1200 / max(gray.shape[1], 1)))
@@ -306,6 +332,7 @@ def _visual_spacing_candidate(image: np.ndarray, languages: str) -> OCRCandidate
 
 
 def _candidate_score(candidate: OCRCandidate) -> float:
+    """Rank a reading: confidence plus bonuses for name-like text, penalties for noise."""
     text = re.sub(r"\s+", " ", candidate.text).strip()
     if not text:
         return -1000.0
@@ -330,6 +357,7 @@ def _candidate_score(candidate: OCRCandidate) -> float:
 
 
 def _needs_review(candidate: OCRCandidate) -> bool:
+    """Flag a reading with low confidence, stray punctuation, or one suspiciously long word."""
     flat = re.sub(r"\s+", " ", candidate.text).strip()
     tokens = flat.split()
     longest = max((len(token) for token in tokens), default=0)
@@ -338,6 +366,11 @@ def _needs_review(candidate: OCRCandidate) -> bool:
 
 
 def _candidates_disagree(ranked: list[OCRCandidate]) -> bool:
+    """Tell whether readings of similar confidence say something different from the winner.
+
+    A 95% reading can still be wrong; if another strong reading differs (difflib ratio
+    below 0.985 after dropping spaces and punctuation), a person has to look.
+    """
     if len(ranked) < 2:
         return False
     best = ranked[0]
@@ -359,6 +392,7 @@ def _candidates_disagree(ranked: list[OCRCandidate]) -> bool:
 
 
 def recognize_crop(image: np.ndarray, languages: str) -> dict[str, Any]:
+    """Read one region every way, rank the readings, and return the best with alternatives."""
     candidates: list[OCRCandidate] = []
     region_is_multiline = image.shape[0] / max(image.shape[1], 1) > 0.12
     psms = [7, 13] if not region_is_multiline else [6, 11]
@@ -416,6 +450,7 @@ def recognize_selections(
     dpi: int,
     languages: str,
 ) -> dict[str, Any]:
+    """Read each selection in order and join the best readings into one proposed name."""
     regions: list[dict[str, Any]] = []
     best_parts: list[str] = []
     for index, selection in enumerate(selections):

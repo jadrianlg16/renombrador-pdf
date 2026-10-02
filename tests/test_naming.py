@@ -1,3 +1,5 @@
+"""Filename and upload-path sanitizing."""
+
 from pathlib import Path
 
 import pytest

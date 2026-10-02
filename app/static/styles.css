@@ -128,7 +128,7 @@ code, kbd { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .button.secondary { background: var(--panel-2); border-color: var(--border); }
 .button.ghost { background: transparent; border-color: var(--border); }
 .button.danger { background: var(--danger); color: #2a0808; }
-/* Va despues de .ghost: comparten especificidad y gana la ultima. */
+/* Must come after .ghost: both have the same specificity, so the later rule wins. */
 .button.ghost.danger-text { color: var(--danger); border-color: rgba(239, 106, 106, .45); }
 .button.ghost.danger-text:disabled { color: var(--muted); border-color: var(--border); }
 .button:hover:not(:disabled), .icon-button:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.12); }

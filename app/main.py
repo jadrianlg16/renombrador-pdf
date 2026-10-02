@@ -1,3 +1,5 @@
+"""FastAPI app: serves the review UI and the JSON API that renders, reads and renames PDFs."""
+
 from __future__ import annotations
 
 import shutil
@@ -61,6 +63,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 def _get_document_or_404(document_id: str) -> dict:
+    """Return the stored document or answer 404."""
     document = database.get_document(document_id)
     if not document:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
@@ -68,6 +71,7 @@ def _get_document_or_404(document_id: str) -> dict:
 
 
 def _document_path(document: dict) -> Path:
+    """Resolve a document's file on disk, refusing paths outside the inbox or missing files."""
     path = (settings.input_dir / document["current_relative_path"]).resolve()
     try:
         path.relative_to(settings.input_dir.resolve())
@@ -80,16 +84,23 @@ def _document_path(document: dict) -> Path:
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> FileResponse:
+    """Serve the single-page review UI."""
     return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon() -> FileResponse:
+    """Serve the app icon for clients that ask for /favicon.ico."""
     return FileResponse(STATIC_DIR / "favicon.ico", media_type="image/x-icon")
 
 
 @app.get("/api/health")
 def health() -> dict:
+    """Report the app identity, inbox and Tesseract status.
+
+    The launcher and stop_windows.bat use ``app_id`` to tell this app apart from other
+    programs listening on the same ports.
+    """
     try:
         languages = pytesseract.get_languages(config="")
         tesseract_ready = True
@@ -109,16 +120,19 @@ def health() -> dict:
 
 @app.get("/api/config")
 def client_config() -> dict:
+    """Expose the limits the UI applies before it uploads anything."""
     return {"max_upload_bytes": MAX_UPLOAD_BYTES}
 
 
 @app.post("/api/sync")
 def sync() -> dict:
+    """Rescan the inbox now; returns how many documents were added, restored or lost."""
     return database.sync_documents()
 
 
 @app.get("/api/documents")
 def list_documents() -> dict:
+    """List every known document with counts per status."""
     documents = database.list_documents()
     counts = {status: 0 for status in ("pending", "approved", "skipped", "missing")}
     for document in documents:
@@ -128,6 +142,7 @@ def list_documents() -> dict:
 
 @app.get("/api/documents/{document_id}")
 def get_document(document_id: str) -> dict:
+    """Return one document and refresh its stored page count from the file."""
     document = _get_document_or_404(document_id)
     path = _document_path(document)
     try:
@@ -143,6 +158,7 @@ def get_document(document_id: str) -> dict:
 
 @app.get("/api/documents/{document_id}/file")
 def get_document_file(document_id: str) -> FileResponse:
+    """Download the PDF itself."""
     document = _get_document_or_404(document_id)
     return FileResponse(
         _document_path(document), media_type="application/pdf", filename=document["current_name"]
@@ -155,6 +171,7 @@ def get_document_page(
     page_number: int,
     dpi: Annotated[int, Query(ge=72, le=250)] = settings.render_dpi,
 ) -> Response:
+    """Render one page as PNG for the viewer, at PDF_RENDER_DPI unless ``dpi`` is given."""
     document = _get_document_or_404(document_id)
     path = _document_path(document)
     try:
@@ -170,6 +187,7 @@ def get_document_page(
 
 @app.post("/api/documents/{document_id}/ocr")
 def ocr_document(document_id: str, request: OCRRequest) -> dict:
+    """Read the marked regions with OCR and store the joined text as the proposed name."""
     document = _get_document_or_404(document_id)
     path = _document_path(document)
     selections = [selection.model_dump() for selection in request.selections]
@@ -201,6 +219,7 @@ def ocr_document(document_id: str, request: OCRRequest) -> dict:
 
 @app.post("/api/documents/{document_id}/approve")
 def approve_document(document_id: str, request: ApproveRequest) -> dict:
+    """Rename the file to the approved name (never overwriting) and log the rename."""
     document = _get_document_or_404(document_id)
     source = _document_path(document)
     try:
@@ -236,6 +255,7 @@ def approve_document(document_id: str, request: ApproveRequest) -> dict:
 
 @app.post("/api/documents/{document_id}/skip")
 def skip_document(document_id: str) -> dict:
+    """Mark a document as skipped; it can be reviewed later."""
     _get_document_or_404(document_id)
     database.mark_skipped(document_id)
     return {"ok": True}
@@ -243,6 +263,11 @@ def skip_document(document_id: str) -> dict:
 
 @app.post("/api/undo-last")
 def undo_last() -> dict:
+    """Restore the most recent rename that has not been undone yet.
+
+    Refuses with 409 when the old name has been taken in the meantime, so an undo never
+    overwrites a file.
+    """
     action = database.latest_undoable_rename()
     if not action:
         raise HTTPException(status_code=404, detail="No hay cambios de nombre para deshacer")
@@ -266,16 +291,18 @@ def undo_last() -> dict:
 
 @app.get("/api/history")
 def history(limit: Annotated[int, Query(ge=1, le=1000)] = 100) -> dict:
+    """Return the most recent renames, skips and undos, newest first."""
     return {"actions": database.history(limit)}
 
 
 def batch_of(relative_path: str) -> str:
-    """Carpeta de primer nivel dentro de la bandeja; cadena vacía para la raíz."""
+    """Return the batch a document belongs to: its top-level folder, or "" for the root."""
     parts = PurePosixPath(relative_path).parts
     return parts[0] if len(parts) > 1 else ""
 
 
 def _resolve_batch_dir(folder: str | None, batch: str | None) -> Path:
+    """Return the folder an upload goes to: an existing batch, or a new uniquely named one."""
     if batch:
         name = sanitize_folder_name(batch)
         candidate = settings.input_dir / name if name else None
@@ -291,7 +318,7 @@ def _resolve_batch_dir(folder: str | None, batch: str | None) -> Path:
 
 
 async def _store_upload(upload: UploadFile, batch_dir: Path) -> tuple[str | None, str | None]:
-    """Guarda un PDF dentro del lote. Devuelve (ruta_relativa, motivo_de_rechazo)."""
+    """Copy one uploaded PDF into the batch; returns (relative path, rejection reason)."""
     relative = safe_upload_relative_path(upload.filename or "")
     if not relative:
         return None, "Sólo se aceptan archivos .pdf"
@@ -321,6 +348,7 @@ async def upload_documents(
     folder: Annotated[str | None, Form()] = None,
     batch: Annotated[str | None, Form()] = None,
 ) -> dict:
+    """Store uploaded PDFs in a batch folder, keeping their subfolders, then rescan."""
     if not files:
         raise HTTPException(status_code=400, detail="No se recibió ningún archivo")
     batch_dir = _resolve_batch_dir(folder, batch)
@@ -356,6 +384,7 @@ async def upload_documents(
 
 @app.get("/api/batches")
 def list_batches() -> dict:
+    """List batches with document counts, export state and whether they may be deleted."""
     registered = {row["name"]: row for row in database.list_batches()}
     totals: dict[str, dict[str, int]] = {}
     for document in database.list_documents():
@@ -377,7 +406,7 @@ def list_batches() -> dict:
             {
                 "name": name,
                 **bucket,
-                # Los PDF sueltos en la raíz de la bandeja no forman lote y nunca se borran.
+                # Loose PDFs in the inbox root never form a batch, so they are never deletable.
                 "deletable": bool(name) and bool(row),
                 "source": row["source"] if row else None,
                 "created_at": row["created_at"] if row else None,
@@ -389,6 +418,11 @@ def list_batches() -> dict:
 
 @app.post("/api/batches/{batch_name}/delete")
 def delete_batch(batch_name: str) -> dict:
+    """Delete a whitelisted batch folder from disk and forget its documents.
+
+    Only names in the ``batches`` table are accepted, the inbox root is refused, and the
+    resolved path must still be inside the inbox before ``shutil.rmtree`` runs.
+    """
     row = database.get_batch(batch_name)
     if not row:
         raise HTTPException(
@@ -430,6 +464,7 @@ def export_zip(
     scope: Annotated[str, Query(pattern="^(approved|all)$")] = "approved",
     folder: str | None = None,
 ) -> FileResponse:
+    """Build a ZIP of one batch or all of them, with approved files only or every file."""
     entries: list[tuple[Path, str]] = []
     exported_batches: set[str] = set()
     for document in database.list_documents():
@@ -446,8 +481,8 @@ def export_zip(
             continue
         if document_batch:
             exported_batches.add(document_batch)
-        # Al exportar un solo lote el ZIP se abre directo en los archivos; al
-        # exportar todo se conservan las carpetas para no mezclar lotes.
+        # A one-batch ZIP opens straight onto the files; a ZIP of everything keeps one
+        # folder per batch so files from different batches never mix.
         if folder and document_batch:
             arcname = relative.relative_to(document_batch).as_posix()
         else:
@@ -483,8 +518,8 @@ def export_zip(
         archive_path.unlink(missing_ok=True)
         raise
 
-    # Se marca antes de enviar: el aviso de "todavía no descargas este lote" que protege
-    # al botón de borrar debe apagarse aunque el navegador cancele la descarga a medias.
+    # Marked before sending: the "not downloaded yet" warning that guards the delete button
+    # should clear even if the browser cancels the download halfway.
     database.mark_batches_exported(sorted(exported_batches))
 
     label = (sanitize_folder_name(folder) or "raiz") if folder is not None else "todo"

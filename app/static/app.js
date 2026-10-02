@@ -110,8 +110,8 @@ async function request(url, options = {}) {
   return response.json();
 }
 
-// Contador en vez de booleano: aprobar llama a loadDocuments() mientras sigue ocupado
-// y antes eso dejaba la interfaz habilitada a medias.
+// A counter instead of a boolean: approving calls loadDocuments() while it is still busy,
+// and a boolean used to leave the UI half enabled.
 function setBusy(value, message = '') {
   busyDepth = Math.max(0, busyDepth + (value ? 1 : -1));
   state.busy = busyDepth > 0;
@@ -450,7 +450,7 @@ function renderExportFolders(preferBatch = null) {
 }
 
 function exportSelection() {
-  // selectedIndex distingue "sin opciones" de la opción de la raíz, cuyo valor es "".
+  // selectedIndex tells "no options" apart from the root option, whose value is "".
   const folder = elements.exportFolder.selectedIndex >= 0 ? elements.exportFolder.value : ALL_BATCHES;
   const scope = elements.exportScope.value;
   const matches = state.documents.filter((document) => {
@@ -471,8 +471,8 @@ function updateExportControls() {
   updateClearBatchControls();
 }
 
-// El botón actúa sobre el lote elegido arriba, que tras subir una carpeta ya viene
-// seleccionado en la nueva: así "limpiar el último lote" es un solo clic.
+// The button acts on the batch picked above, which switches to the new batch after an
+// upload, so clearing the last batch is a single click.
 function selectedBatch() {
   const { folder } = exportSelection();
   if (folder === ALL_BATCHES) return null;
@@ -814,8 +814,8 @@ async function walkEntry(entry, prefix, items) {
   if (entry.isDirectory) await walkDirectory(entry, `${prefix}${entry.name}/`, items);
 }
 
-// Las entradas del DataTransfer se invalidan al terminar el manejador, así que
-// se leen de forma síncrona antes del primer await.
+// DataTransfer entries become invalid once the event handler returns, so they are read
+// synchronously before the first await.
 async function collectFromDrop(dataTransfer) {
   const entries = [...(dataTransfer.items || [])]
     .map((item) => (item.webkitGetAsEntry ? item.webkitGetAsEntry() : null))
@@ -1011,7 +1011,7 @@ window.addEventListener('drop', async (event) => {
 window.addEventListener('resize', redrawCanvas);
 window.addEventListener('keydown', (event) => {
   if (state.uploading) return;
-  // Con el diálogo de borrado abierto no debe dispararse ningún atajo detrás de él.
+  // While the delete dialog is open, no shortcut may fire behind it.
   if (state.modalOpen) {
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -1022,9 +1022,9 @@ window.addEventListener('keydown', (event) => {
   const activeTag = window.document.activeElement?.tagName;
   const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag)
     || Boolean(window.document.activeElement?.isContentEditable);
-  // Enter sobre un botón enfocado debe activar ese botón, no aprobar el documento.
+  // Enter on a focused button must press that button, not approve the document.
   const activatable = ['BUTTON', 'A', 'SELECT', 'SUMMARY'].includes(activeTag);
-  // Con Alt los atajos de navegación siguen funcionando sin salir del campo de nombre.
+  // With Alt, the navigation shortcuts keep working from inside the name field.
   const navigable = !typing || event.altKey;
 
   if (navigable && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
@@ -1038,7 +1038,7 @@ window.addEventListener('keydown', (event) => {
     return;
   }
   if (event.altKey && !event.ctrlKey && !event.metaKey) {
-    // Alt + R/S para no tener que salir del campo de nombre, donde "r" y "s" son letras.
+    // Alt + R/S work from the name field, where a plain "r" or "s" is just a letter.
     if (event.key.toLowerCase() === 'r') {
       event.preventDefault();
       clearSelections();
@@ -1051,7 +1051,7 @@ window.addEventListener('keydown', (event) => {
     }
   }
   if (event.ctrlKey || event.metaKey) {
-    // Dentro del campo de nombre, Ctrl+Z deshace el texto; Ctrl+Alt+Z deshace el renombrado.
+    // In the name field Ctrl+Z undoes typing; Ctrl+Alt+Z undoes the last rename.
     if (navigable && event.key.toLowerCase() === 'z') {
       event.preventDefault();
       undoLast();

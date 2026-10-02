@@ -1,3 +1,5 @@
+"""Filename and upload-path sanitizing, and collision-free target names."""
+
 from __future__ import annotations
 
 import re
@@ -12,6 +14,12 @@ WINDOWS_RESERVED = {
 
 
 def sanitize_pdf_name(value: str) -> str:
+    """Turn an approved name into a Windows-safe ``.pdf`` filename.
+
+    Keeps accents (NFC), replaces characters Windows rejects with spaces, trims dots and
+    spaces at the ends, drops a typed ``.pdf`` and suffixes reserved device names such
+    as ``CON``. Raises ValueError when nothing is left.
+    """
     value = unicodedata.normalize("NFC", value or "")
     value = value.replace("\n", " ").replace("\r", " ")
     value = re.sub(r"[<>:\"/\\|?*\x00-\x1F]", " ", value)
@@ -29,9 +37,9 @@ MAX_COMPONENT_LENGTH = 120
 
 
 def sanitize_path_component(value: str) -> str:
-    """Limpia un solo segmento de ruta y devuelve cadena vacía si no queda nada útil."""
+    """Clean one path segment; returns "" when nothing usable is left."""
     value = unicodedata.normalize("NFC", value or "")
-    # Sólo la letra de unidad se descarta; los demás ":" pasan a ser espacios.
+    # Only a drive letter is dropped; any other ":" becomes a space.
     value = re.sub(r"^[A-Za-z]:", "", value)
     value = re.sub(r"[<>:\"/\\|?*\x00-\x1F]", " ", value)
     value = re.sub(r"\s+", " ", value).strip(" .")
@@ -51,13 +59,17 @@ def sanitize_path_component(value: str) -> str:
 
 
 def sanitize_folder_name(value: str) -> str:
-    """Nombre de lote de un solo nivel; ignora cualquier ruta que venga del navegador."""
+    """Return a one-level batch name, ignoring any path the browser sent with it."""
     parts = [part for part in re.split(r"[\\/]+", value or "") if part]
     return sanitize_path_component(parts[-1]) if parts else ""
 
 
 def safe_upload_relative_path(value: str) -> str | None:
-    """Convierte el nombre enviado por el navegador en una ruta relativa segura a un PDF."""
+    """Turn a browser-sent filename into a safe relative path to a PDF, or None.
+
+    Every segment is cleaned, ``..`` and drive letters disappear, and only the last six
+    levels are kept, so the result can only point inside the folder it is joined to.
+    """
     components = []
     for raw in re.split(r"[\\/]+", value or ""):
         component = sanitize_path_component(raw)
@@ -72,6 +84,7 @@ def safe_upload_relative_path(value: str) -> str | None:
 
 
 def unique_directory(parent: Path, name: str) -> Path:
+    """Return ``parent/name``, or ``name (2)``, ``name (3)``... if that folder exists."""
     candidate = parent / name
     if not candidate.exists():
         return candidate
@@ -84,6 +97,11 @@ def unique_directory(parent: Path, name: str) -> Path:
 
 
 def unique_target(directory: Path, filename: str, current_path: Path | None = None) -> Path:
+    """Return a path for ``filename`` in ``directory`` that doesn't overwrite another file.
+
+    Adds `` (2)``, `` (3)``... on a clash. ``current_path`` is the file being renamed, which
+    may keep its own name.
+    """
     candidate = directory / filename
     if current_path and candidate.resolve() == current_path.resolve():
         return candidate
