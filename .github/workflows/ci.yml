@@ -55,3 +55,17 @@ jobs:
           PY
           # The server must not run as root.
           test "$(docker exec renombrador awk '/^Uid:/ {print $2}' /proc/1/status)" = "10001"
+
+  ui-lint:
+    name: Lint the browser UI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Lint
+        run: npm run lint

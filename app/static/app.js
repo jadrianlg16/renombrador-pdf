@@ -104,7 +104,9 @@ async function request(url, options = {}) {
     try {
       const payload = await response.json();
       detail = payload.detail || detail;
-    } catch (_) {}
+    } catch {
+      // Not a JSON error body: keep the status code as the message.
+    }
     throw new Error(detail);
   }
   return response.json();
@@ -377,7 +379,11 @@ function pointerUp(event) {
   const draft = state.draftSelection;
   pointerStart = null;
   state.draftSelection = null;
-  try { elements.canvas.releasePointerCapture(event.pointerId); } catch (_) {}
+  try {
+    elements.canvas.releasePointerCapture(event.pointerId);
+  } catch {
+    // The capture is already gone (pointercancel); there is nothing to release.
+  }
   if (draft && draft.width * point.width >= 8 && draft.height * point.height >= 8) {
     state.selections.push(draft);
     resetOcrPanels();
@@ -395,6 +401,9 @@ function updateSelectionSummary() {
 }
 
 function updateFilenamePreview() {
+  // Mirrors sanitize_pdf_name in app/naming.py: Windows rejects these characters in file
+  // names, control characters included.
+  // eslint-disable-next-line no-control-regex
   const value = elements.nameInput.value.trim().replace(/[<>:"/\\|?*\u0000-\u001F]/g, ' ').replace(/\s+/g, ' ').replace(/[. ]+$/g, '');
   elements.filenamePreview.textContent = value ? `${value.replace(/\.pdf$/i, '')}.pdf` : '—.pdf';
   const editable = state.currentDocument && ['pending', 'skipped'].includes(state.currentDocument.status);
@@ -785,7 +794,11 @@ function sendUpload(form, onProgress) {
     });
     xhr.addEventListener('load', () => {
       let payload = null;
-      try { payload = JSON.parse(xhr.responseText); } catch (_) {}
+      try {
+        payload = JSON.parse(xhr.responseText);
+      } catch {
+        // Not JSON (a proxy or network error page): fall back to the status code below.
+      }
       if (xhr.status >= 200 && xhr.status < 300) resolve(payload || {});
       else reject(new Error(payload?.detail || `Error ${xhr.status} al subir`));
     });
@@ -1094,7 +1107,7 @@ async function loadConfig() {
   try {
     const config = await request('/api/config');
     state.maxUploadBytes = config.max_upload_bytes || null;
-  } catch (_) {
+  } catch {
     // Without the limit the server still refuses oversized uploads; they just aren't filtered here.
   }
 }

@@ -1,0 +1,16 @@
+{
+  "name": "renombrador-pdf",
+  "private": true,
+  "description": "Lint tooling for the browser UI in app/static; the app itself is Python.",
+  "scripts": {
+    "lint": "eslint ."
+  },
+  "engines": {
+    "node": ">=20.9"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "eslint": "9.39.5",
+    "globals": "17.13.0"
+  }
+}

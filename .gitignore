@@ -9,3 +9,4 @@ data/state/exports/
 data/inbox/*.pdf
 data/inbox/*/
 !data/inbox/.gitkeep
+node_modules/

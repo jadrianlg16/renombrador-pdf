@@ -93,6 +93,7 @@ docker-entrypoint.sh   fixes /app/data ownership, then runs the server as an unp
 requirements*.txt      allowed version ranges; requirements-dev.txt adds pytest, httpx and ruff
 constraints.txt        the exact versions the tests, CI and the Docker image use
 pyproject.toml         ruff and pytest settings
+package.json           ESLint for the browser UI (eslint.config.mjs); not needed to run the app
 .github/workflows/     CI: lint, tests, and a Docker build with a health check
 ```
 
@@ -158,13 +159,15 @@ The server in the container runs as an unprivileged user, not root. On Linux, wh
 .venv/bin/python -m pytest
 .venv/bin/python -m ruff check .
 .venv/bin/python -m ruff format --check .
+npm ci
+npm run lint
 ```
 
-On Windows, use `.venv\Scripts\python` in place of `.venv/bin/python`. `requirements-dev.txt` adds pytest, httpx (FastAPI's `TestClient` needs it) and a pinned ruff to the runtime requirements. `constraints.txt` pins every package, transitive ones included, to the versions CI and the Docker image use; after changing a range in `requirements*.txt`, install without `-c`, run the tests, and regenerate it with `pip freeze`.
+On Windows, use `.venv\Scripts\python` in place of `.venv/bin/python`. `requirements-dev.txt` adds pytest, httpx (FastAPI's `TestClient` needs it) and a pinned ruff to the runtime requirements. The last two lines lint `app/static/app.js` with ESLint and need Node.js 20.9 or newer. `constraints.txt` pins every package, transitive ones included, to the versions CI and the Docker image use; after changing a range in `requirements*.txt`, install without `-c`, run the tests, and regenerate it with `pip freeze`.
 
 The tests run the HTTP API against a temporary inbox: uploads, path traversal, ZIP layout, batch-deletion rules, approving, undo, skipping, the host allowlist, cross-site and fetch-metadata rules, security headers, body limits, render limits and error messages. They also cover filename sanitizing, OCR text cleanup, word segmentation, how readings are ranked and when they are flagged for review, and the launcher's port selection. Tesseract is faked where needed, so the tests don't need it installed.
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the same install, lint and test commands on Ubuntu, then builds the Docker image and checks that it answers `/api/health` with Spanish OCR available and runs as a non-root user. Each step has been run locally, but the workflow has not run on GitHub yet.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the same install, lint and test commands on Ubuntu, lints the UI with ESLint, then builds the Docker image and checks that it answers `/api/health` with Spanish OCR available and runs as a non-root user. Each step has been run locally, but the workflow has not run on GitHub yet.
 
 ## Configuration
 
