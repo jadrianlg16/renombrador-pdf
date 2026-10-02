@@ -8,33 +8,18 @@ Renombrador PDF (Spanish for "PDF renamer") is a local web app for offices that 
 
 ![The app marking a two-line name on a PDF page, reading it with OCR, and renaming the file after approval](docs/demo.gif)
 
-*Recorded with the demo PDF from `generate_demo_pdf.py`; the name in it is made up.*
+*Recorded with the demo PDF from `generate_demo_pdf.py`; the name in it is made up. There is no hosted demo: the app reads and renames files on your own disk.*
 
-There is no hosted demo: this is a local tool that reads and renames files on your own disk.
-
-## Contents
-
-- [Features](#features)
-- [How it works](#how-it-works)
-- [Engineering highlights](#engineering-highlights)
-- [Tech stack and design decisions](#tech-stack-and-design-decisions)
-- [Getting started](#getting-started)
-- [Tests](#tests)
-- [Configuration](#configuration)
-- [Limitations](#limitations)
-- [License](#license)
-- [Author](#author)
+**Contents:** [Features](#features) · [How it works](#how-it-works) · [Engineering highlights](#engineering-highlights) · [Tech stack](#tech-stack-and-design-decisions) · [Getting started](#getting-started) · [Tests](#tests) · [Configuration](#configuration) · [Limitations](#limitations) · [License](#license) · [Author](#author)
 
 ## Features
 
 - **Folder upload from the browser.** Use the folder picker, pick loose PDFs, or drag a folder onto the window. Subfolders are kept. If a batch name is already taken, the new one gets ` (2)`. You can also copy PDFs into `data/inbox` and press *Actualizar carpeta* (refresh folder).
 - **OCR on marked regions only.** Draw one or more boxes. One box can cover a name that wraps onto several lines, and several boxes, even on different pages, are joined in order 1, 2, 3.
-- **Several readings per box.** Each box goes through five image preprocessing variants, each read in two Tesseract page-segmentation modes, plus a word-by-word pass that rebuilds spacing from the gaps in the ink. The best reading is proposed. With a single box, the other distinct readings are listed too (up to eight entries), and a click swaps one in.
-- **Review aids.** The original crop and a contrast-enhanced version sit next to the editable name for a letter-by-letter check. A result is flagged for review when confidence is below 60, when it contains stray punctuation, or when the top readings disagree, even if confidence is high.
+- **Several readings, flagged when unsure.** Each box goes through five image preprocessing variants in two Tesseract page-segmentation modes, plus a word-by-word pass that rebuilds spacing from the gaps in the ink. The best reading is proposed next to the original and contrast-enhanced crops; with a single box, the other readings are one click away. A result is flagged for review when confidence is below 60, when it contains stray punctuation, or when the readings disagree, even at high confidence.
 - **Safe renames.** Accents are kept, characters Windows rejects are replaced, and reserved names such as `CON` or `LPT1` get a suffix. An existing file is never overwritten: ` (2)`, ` (3)` is appended instead. Only the file name changes; the PDF's content is not touched.
 - **Skip, undo and history.** You can skip a hard document. Undo walks renames back newest-first and refuses if the old name has since been taken. Every rename, skip and undo is logged in SQLite.
-- **ZIP export** for one batch or for everything, with either the approved files only or all files. A one-batch ZIP has the files at its root; a full ZIP keeps one folder per batch.
-- **Batch cleanup.** Deleting a batch asks for confirmation, shows how many files will go, and warns if renamed files were never exported.
+- **ZIP export and cleanup.** Export one batch or everything, approved files only or all files; a one-batch ZIP has the files at its root, a full ZIP keeps one folder per batch. Deleting a batch afterwards asks for confirmation and warns if renamed files were never exported.
 - **Keyboard flow.** `Enter` approves and jumps to the next pending document. The arrow keys move between documents and pages. Hold `Alt` to use the shortcuts while typing in the name field.
 - **Offline.** Rendering and OCR run on your machine, and the app calls no external service.
 
@@ -46,8 +31,7 @@ There is no hosted demo: this is a local tool that reads and renames files on yo
 
    ![Review panel showing the proposed name at 96% confidence, the joined reading, and the original and contrast-enhanced crops of the marked region](docs/review.png)
 
-4. **Approve.** The name is sanitized, the file is renamed inside `data/inbox`, the action is logged, and the app moves to the next pending document.
-5. **Export.** Download the batch as a ZIP, then clear it from the inbox.
+4. **Approve and export.** The name is sanitized, the file is renamed inside `data/inbox`, the action is logged, and the app moves to the next pending document. When the batch is done, download it as a ZIP and clear it from the inbox.
 
 ```mermaid
 flowchart LR
@@ -82,7 +66,7 @@ flowchart LR
 - **Regions instead of full-page OCR.** The operator already knows where the name is. Reading a small crop at high resolution is quick and can't pick the wrong name from a page full of names.
 - **The files are the source of truth.** On startup, and whenever you press *Actualizar carpeta*, the inbox is rescanned: new PDFs are added, vanished ones are marked missing, and returning ones are restored.
 - **Uploads are copies.** Uploaded files are copied into `data/inbox/<batch>`, and renames happen there, so the originals on your disk are left alone.
-- **Typed code.** The `app/` package has type annotations on every parameter, though no type checker runs in this repo.
+- **Typed code.** The `app/` package has type annotations on every parameter.
 
 ### Project structure
 
@@ -96,16 +80,12 @@ app/
   config.py          settings from environment variables, Tesseract discovery
   static/            index.html, app.js, styles.css
 tests/               pytest suite (naming, OCR helpers, launcher, HTTP API)
-data/inbox/          PDFs to rename (contents git-ignored)
-data/state/          SQLite database and temporary ZIP exports (git-ignored)
+data/                inbox/ for the PDFs, state/ for SQLite and ZIP exports (contents git-ignored)
 launcher.py          picks a free port, waits for /api/health, opens the browser
 generate_demo_pdf.py writes a one-page demo PDF into data/inbox
 run_linux.sh         starts the launcher from .venv (macOS / Linux)
-setup_windows.bat    creates .venv and installs requirements (Windows)
-run_windows.bat      starts the launcher (Windows)
-stop_windows.bat     stops every running instance on ports 8765-8799 (Windows)
-Dockerfile           Python 3.12 slim image with Tesseract (spa, eng)
-docker-compose.yml   compose service with data/ mounted
+*_windows.bat        setup, run and stop helpers (Windows)
+Dockerfile           Python 3.12 slim image with Tesseract (spa, eng); docker-compose.yml wraps it
 ```
 
 ## Getting started
@@ -141,23 +121,16 @@ py -3.12 -m venv .venv
 .venv\Scripts\python launcher.py
 ```
 
-The launcher binds to `127.0.0.1` and takes the first free port from 8765 to 8799. It waits until `/api/health` answers, then opens your browser. Use `--port 8770` to choose the port and `--no-browser` to skip opening the browser; press `Ctrl+C` to stop.
+The launcher binds to `127.0.0.1` and takes the first free port from 8765 to 8799. It waits until `/api/health` answers, then opens your browser. Use `--port 8770` to choose the port and `--no-browser` to skip opening the browser; press `Ctrl+C` to stop. Helper scripts: once `.venv` exists, `sh run_linux.sh` starts the launcher on macOS / Linux. On Windows, `setup_windows.bat` and `run_windows.bat` do the install and start steps from a double-click. `stop_windows.bat` stops every running instance on ports 8765 to 8799; read the [user guide](README.es.md#cómo-cerrar-la-aplicación) before using it alongside Docker.
 
-Helper scripts: once `.venv` exists, `sh run_linux.sh` starts the launcher on macOS / Linux. On Windows, `setup_windows.bat` and `run_windows.bat` do the install and start steps from a double-click. `stop_windows.bat` stops every running instance; it checks `/api/health` on each port first so it leaves other programs alone, with one exception covered under [Limitations](#limitations).
-
-To start Uvicorn yourself instead (shown for macOS / Linux; on Windows use `.venv\Scripts\python`):
-
-```bash
-.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
-```
-
-To try it with the demo document:
+Optional (shown for macOS / Linux; on Windows use `.venv\Scripts\python`):
 
 ```bash
 .venv/bin/python generate_demo_pdf.py
+.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
 ```
 
-This writes `data/inbox/demo_nombre_dos_lineas.pdf`, a one-page PDF with a made-up name split over two lines. If the app is already running, press *Actualizar carpeta* to pick it up.
+The first line writes `data/inbox/demo_nombre_dos_lineas.pdf`, a one-page PDF with a made-up name split over two lines (press *Actualizar carpeta* if the app is already running). The second starts Uvicorn directly, without the launcher.
 
 ### Docker
 
@@ -166,7 +139,7 @@ docker build -t renombrador-pdf .
 docker run --rm -p 127.0.0.1:8765:8000 -v "$PWD/data:/app/data" renombrador-pdf
 ```
 
-Then open `http://127.0.0.1:8765`. The image already includes Tesseract with Spanish and English. The mount makes the container use this repo's `data/` folder, so files you copy into `data/inbox` show up in the app. In PowerShell the same two lines work unchanged. `docker-compose.yml` is also included, but it publishes the port on every network interface; see [Limitations](#limitations).
+Then open `http://127.0.0.1:8765`. The image already includes Tesseract with Spanish and English. The mount makes the container use this repo's `data/` folder, so files you copy into `data/inbox` show up in the app. In PowerShell the same two lines work unchanged.
 
 ## Tests
 
@@ -175,9 +148,7 @@ Then open `http://127.0.0.1:8765`. The image already includes Tesseract with Spa
 .venv/bin/python -m pytest tests
 ```
 
-On Windows, use `.venv\Scripts\python` in place of `.venv/bin/python`. FastAPI's `TestClient` needs `httpx`, which `requirements.txt` doesn't list.
-
-The tests cover filename and upload-path sanitizing, OCR text cleanup and word segmentation, and the launcher's port selection. They also exercise the HTTP API against a temporary inbox: upload validation, path traversal, ZIP layout, batch-deletion rules and stable ordering. They don't need Tesseract.
+On Windows, use `.venv\Scripts\python` in place of `.venv/bin/python`. FastAPI's `TestClient` needs `httpx`, which `requirements.txt` doesn't list. The tests cover filename and upload-path sanitizing, OCR text cleanup and word segmentation, and the launcher's port selection. They also exercise the HTTP API against a temporary inbox: upload validation, path traversal, ZIP layout, batch-deletion rules and stable ordering. They don't need Tesseract.
 
 ## Configuration
 
@@ -196,14 +167,11 @@ The defaults are relative to the repo root; a relative path you set yourself is 
 
 ## Limitations
 
-- **Local, single-user tool with no authentication.** No endpoint checks who is calling. Anyone who can reach the port can list, download, upload and rename files, and delete whole batches (with `shutil.rmtree`; there is no recycle bin). There is no CSRF protection either. Keep it on `127.0.0.1`, which is what the launcher and the `docker run` command above do, and **never expose it on a network**. `docker-compose.yml` maps `"8765:8000"`, which listens on all interfaces; change it to `"127.0.0.1:8765:8000"` before using compose.
-- **Not hardened for untrusted files.** The only check on an upload is the `%PDF-` signature; after that, PyMuPDF parses whatever it receives. The 300 MB cap applies to the copy into the inbox, after the server has already received the request, so it doesn't limit request size.
-- **`stop_windows.bat` and Docker don't mix.** The script force-stops whichever process listens on a matching port. While the container is published on 8765, that process belongs to Docker Desktop, so stop the container with `Ctrl+C` or `docker stop` instead.
-- **One operator at a time.** State is a local SQLite file and nothing coordinates concurrent reviewers.
-- **OCR quality follows scan quality.** The confidence number is advisory. Faint, skewed or handwritten names can need manual correction, which is why review can't be skipped.
-- **Spanish-only interface.** The OCR languages can be changed with `OCR_LANGUAGES`, but every label and message is in Spanish.
-- **Renames happen in place.** If you copy files into `data/inbox`, or mount a real folder over it, those files are renamed, and *Limpiar lote* deletes them. Only uploads through the browser are copies.
-- **Tested platforms.** The app was run on Windows, on Debian (a clean `python:3.12-slim` container) and in the Docker image. macOS has not been tested.
+- **Local, single-user tool.** There is no authentication or CSRF protection, and uploads are only checked for a `%PDF-` signature. Run it on your own machine with files you trust, and don't expose the port. `docker compose up` publishes it on all interfaces; change the mapping in `docker-compose.yml` to `127.0.0.1:8765:8000` if you use it.
+- **OCR quality follows scan quality.** The confidence number is advisory, and faint, skewed or handwritten names can need manual correction. That is why review can't be skipped.
+- **Renames happen in place.** If you copy files into `data/inbox`, or mount a real folder there, those files are renamed, and *Limpiar lote* deletes them permanently. Only browser uploads are copies.
+- **Spanish-only interface.** `OCR_LANGUAGES` changes the OCR languages, but every label and message is in Spanish.
+- **Tested platforms.** Windows, Debian (a clean `python:3.12-slim` container) and the Docker image. macOS has not been tested.
 
 ## License
 

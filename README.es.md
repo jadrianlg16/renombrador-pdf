@@ -2,9 +2,9 @@
 
 [English version](README.md)
 
-Aplicación local para renombrar un lote de PDF escaneados. Marcas con el mouse dónde está el nombre, el sistema lo lee con OCR sólo en esa zona y propone el nombre del archivo. El archivo se renombra únicamente cuando una persona revisa la propuesta y la aprueba.
+Aplicación local para renombrar un lote de PDF escaneados. Marcas con el mouse dónde está el nombre, el sistema lo lee con OCR solo en esa zona y propone el nombre del archivo. El archivo se renombra únicamente cuando una persona revisa la propuesta y la aprueba.
 
-Todo corre en tu equipo: los PDF y los recortes no se envían a ningún servicio externo. Al aprobar, el sistema sólo cambia el nombre del archivo; nunca modifica su contenido.
+Todo corre en tu equipo: los PDF y los recortes no se envían a ningún servicio externo. Al aprobar, el sistema solo cambia el nombre del archivo; nunca modifica su contenido.
 
 ![Pantalla de revisión con una caja sobre el nombre, el nombre propuesto por el OCR y los recortes para comparar](docs/review.png)
 
@@ -64,7 +64,7 @@ docker run --rm -p 127.0.0.1:8765:8000 -v "$PWD/data:/app/data" renombrador-pdf
 
 Después abre `http://127.0.0.1:8765`. La carpeta `data` del proyecto queda montada dentro del contenedor, así que también puedes copiar PDF a mano a `data/inbox`. La imagen ya incluye Tesseract con español e inglés.
 
-> El archivo `docker-compose.yml` publica el puerto en todas las interfaces de red. Si lo usas, cambia `"8765:8000"` por `"127.0.0.1:8765:8000"` para que sólo tu equipo pueda abrir la aplicación.
+> El archivo `docker-compose.yml` publica el puerto en todas las interfaces de red. Si lo usas, cambia `"8765:8000"` por `"127.0.0.1:8765:8000"` para que solo tu equipo pueda abrir la aplicación.
 
 ### Probar con un PDF de ejemplo
 
@@ -90,7 +90,7 @@ En Windows usa `.venv\Scripts\python generate_demo_pdf.py`. Esto crea `data/inbo
 6. **Descarga el ZIP.** Elige el **Lote** y si quieres **Sólo aprobados** o **Todos los archivos**, y presiona **Descargar ZIP**. El ZIP de un lote trae los archivos renombrados en la raíz; el ZIP de todos los lotes conserva la carpeta de cada uno para no mezclarlos.
 7. **Limpia el lote.** Con el ZIP ya guardado, presiona **Limpiar lote** para dejar la bandeja lista para la siguiente carpeta.
 
-Sólo se aceptan archivos `.pdf` reales: la extensión no basta, el servidor verifica la firma del archivo y descarta el resto. La lista conserva el orden original de la carpeta, así que el contador «Documento 5 de N» avanza como esperas.
+Solo se aceptan archivos `.pdf` reales: la extensión no basta, el servidor verifica la firma del archivo y descarta el resto. La lista conserva el orden original de la carpeta, así que el contador «Documento 5 de N» avanza como esperas.
 
 **Para un lote grande**, sube primero una muestra de 10 a 20 PDF. Cuando confirmes que el flujo funciona bien con el formato de tus documentos, sube el resto.
 
@@ -112,8 +112,8 @@ Mientras el cursor está dentro del campo de nombre, las flechas mueven el curso
 
 **Limpiar lote** borra del disco la carpeta del lote elegido arriba. Es definitivo: no hay papelera ni forma de deshacerlo. Por eso tiene estos límites:
 
-- Sólo borra **carpetas de lote**. Nunca borra archivos sueltos en la raíz de `data/inbox`, ni la bandeja entera, ni todos los lotes de un golpe.
-- Pide confirmación y muestra cuántos archivos se van y cuántos ya tenían nombre nuevo.
+- Solo borra **carpetas de lote**. Nunca borra archivos sueltos en la raíz de `data/inbox`, ni la bandeja entera, ni todos los lotes de un golpe.
+- Pide confirmación y muestra cuántos archivos se borrarán y cuántos ya tenían nombre nuevo.
 - Si todavía no descargaste el ZIP de ese lote y ya hay nombres corregidos, la confirmación lo advierte.
 - Una carpeta que ya estaba en la bandeja (no subida desde el navegador) también se puede limpiar, pero la confirmación avisa que no la subiste en esta sesión y te pide confirmar que no son tus originales. **Si montaste tu carpeta real en Docker, lee ese aviso con cuidado: ahí sí serían tus originales.**
 
@@ -126,7 +126,7 @@ Variables de entorno:
 | Variable | Valor predeterminado | Uso |
 |---|---|---|
 | `PDF_INPUT_DIR` | `data/inbox` | Carpeta con los PDF; ahí se guardan las subidas y se renombran los archivos |
-| `PDF_STATE_DIR` | `data/state` | Base SQLite (`renamer.db`) y ZIP temporales |
+| `PDF_STATE_DIR` | `data/state` | Base de datos SQLite (`renamer.db`) y ZIP temporales |
 | `PDF_OCR_DPI` | `450` | Resolución del recorte que se lee con OCR |
 | `PDF_RENDER_DPI` | `150` | Resolución predeterminada de la imagen de página cuando la petición no indica otra; la interfaz siempre pide 150 |
 | `OCR_LANGUAGES` | `spa+eng` | Idiomas de Tesseract |
@@ -139,11 +139,11 @@ El límite por archivo subido es de 300 MB. El navegador envía la carpeta en ta
 - Cada aprobación queda registrada en `data/state/renamer.db`. El botón **Deshacer último** restaura el nombre anterior, siempre que no exista ya otro archivo con ese nombre. Puedes presionarlo varias veces para deshacer, uno por uno, los renombrados más recientes.
 - Los archivos nunca se sobrescriben: si el nombre ya existe, se agrega `(2)`, `(3)`, etc. Se conservan los acentos y se reemplazan los caracteres que Windows no acepta.
 - Si copias tus PDF directamente a `data/inbox` (en lugar de subirlos), se renombran esos mismos archivos. Para tener un respaldo, duplica la carpeta original antes de empezar.
-- La aplicación no tiene usuarios ni contraseñas: cualquiera que pueda abrir su dirección puede ver, renombrar y borrar archivos. Úsala sólo en `127.0.0.1` y no la expongas en una red.
+- La aplicación no tiene usuarios ni contraseñas: cualquiera que pueda abrir su dirección puede ver, renombrar y borrar archivos. Úsala solo en `127.0.0.1` y no la expongas en una red.
 
 ## Problemas frecuentes
 
-**Aparece una página de otro sistema.** Otro programa ya usa el puerto que intentaste abrir. El lanzador evita el conflicto: busca un puerto libre entre 8765 y 8799, espera a que el Renombrador esté listo y sólo entonces abre el navegador. La dirección exacta aparece en la ventana negra. Para fijar un puerto libre a mano:
+**Aparece una página de otro sistema.** Otro programa ya usa el puerto que intentaste abrir. El lanzador evita el conflicto: busca un puerto libre entre 8765 y 8799, espera a que el Renombrador esté listo y solo entonces abre el navegador. La dirección exacta aparece en la ventana negra. Para fijar un puerto libre a mano:
 
 ```bash
 .venv/bin/python launcher.py --port 8770
