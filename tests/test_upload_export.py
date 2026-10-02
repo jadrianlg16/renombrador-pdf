@@ -1,38 +1,11 @@
 from __future__ import annotations
 
-import importlib
 import io
 import zipfile
-from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
-
-MINIMAL_PDF = (
-    b"%PDF-1.4\n"
-    b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
-    b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
-    b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\n"
-    b"trailer<</Root 1 0 R>>\n"
-)
-
-
-@pytest.fixture()
-def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("PDF_INPUT_DIR", str(tmp_path / "inbox"))
-    monkeypatch.setenv("PDF_STATE_DIR", str(tmp_path / "state"))
-    import app.main as main
-
-    module = importlib.reload(main)
-    with TestClient(module.app) as test_client:
-        yield test_client, module
-    importlib.reload(main)
-
-
-def upload(test_client: TestClient, names: list[str], **data: str):
-    files = [("files", (name, io.BytesIO(MINIMAL_PDF), "application/pdf")) for name in names]
-    return test_client.post("/api/upload", files=files, data=data)
+from helpers import MINIMAL_PDF, upload
 
 
 def test_upload_creates_batch_and_registers_documents(client):

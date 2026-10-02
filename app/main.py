@@ -26,6 +26,7 @@ from .naming import (
     unique_target,
 )
 from .ocr import recognize_selections, render_page
+from .security import SameOriginMiddleware
 
 
 APP_VERSION = "1.2.0"
@@ -44,6 +45,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Renombrador PDF", version=APP_VERSION, lifespan=lifespan)
+app.add_middleware(SameOriginMiddleware)
 app.mount("/static", StaticFiles(directory=settings.base_dir / "app" / "static"), name="static")
 
 
